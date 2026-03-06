@@ -1,4 +1,4 @@
-package com.andrew.smartielts.auth.login;
+package com.andrew.smartielts.security.model;
 
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;

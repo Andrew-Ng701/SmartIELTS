@@ -1,7 +1,8 @@
 package com.andrew.smartielts.auth.service;
 
+import com.andrew.smartielts.auth.domain.dto.AuthResponseDTO;
 import com.andrew.smartielts.auth.domain.dto.UserDTO;
 
 public interface RegisterService {
-    String register(UserDTO dto);
+    AuthResponseDTO register(UserDTO dto);
 }

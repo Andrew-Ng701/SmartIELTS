@@ -14,8 +14,8 @@ spring:
       host: 127.0.0.1
       database: 0
 jwt:
-  secret-key: andrew-smart-ielts-secret-key
-  ttl: 3600000   # 1 ??????
+  secret-key: eduhk-andrew-smart-learnIelts-secret-key
+  ttl: 7200000   # 2 ??????
 mybatis:
   # ????????? XML ???
   mapper-locations: classpath:mapper/*.xml

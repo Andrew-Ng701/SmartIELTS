@@ -1,6 +1,6 @@
 package com.andrew.smartielts.security.filter;
 
-import com.andrew.smartielts.auth.login.LoginUser;
+import com.andrew.smartielts.security.model.LoginUser;
 import com.andrew.smartielts.security.properties.JwtProperties;
 import com.andrew.smartielts.utils.JwtUtil;
 import io.jsonwebtoken.Claims;

@@ -1,6 +1,6 @@
 package com.andrew.smartielts.utils;
 
-import com.andrew.smartielts.auth.login.LoginUser;
+import com.andrew.smartielts.security.model.LoginUser;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 
@@ -16,8 +16,7 @@ public class SecurityUtils {
             throw new RuntimeException("User not authenticated");
         }
 
-        LoginUser loginUser =
-                (LoginUser) authentication.getPrincipal();
+        LoginUser loginUser = (LoginUser) authentication.getPrincipal();
 
         return loginUser.getUserId();
     }

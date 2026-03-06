@@ -1,4 +1,4 @@
-package com.andrew.smartielts.config;
+package com.andrew.smartielts.security.config;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
