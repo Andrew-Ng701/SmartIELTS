@@ -1,58 +1,90 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <!DOCTYPE mapper
         PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
-        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.andrew.smartielts.reading.mapper.ReadingPassageMapper">
 
-    <resultMap id="ReadingPassageResultMap" type="com.andrew.smartielts.reading.domain.pojo.ReadingPassage">
+    <resultMap id="BaseMap" type="com.andrew.smartielts.reading.domain.pojo.ReadingPassage">
         <id column="id" property="id"/>
         <result column="test_id" property="testId"/>
         <result column="title" property="title"/>
         <result column="content" property="content"/>
+        <result column="is_deleted" property="isDeleted"/>
     </resultMap>
 
-    <sql id="Base_Column_List">
-        id, test_id, title, content
-    </sql>
-
-    <insert id="insert"
+    <insert id="insertReadingPassage"
             parameterType="com.andrew.smartielts.reading.domain.pojo.ReadingPassage"
             useGeneratedKeys="true"
-            keyProperty="id"
-            keyColumn="id">
-        INSERT INTO reading_passage (test_id, title, content)
-        VALUES (#{testId}, #{title}, #{content})
+            keyProperty="id">
+        insert into reading_passage (
+            test_id, title, content, is_deleted
+        ) values (
+                     #{testId}, #{title}, #{content}, 0
+                 )
     </insert>
 
-    <select id="findById" resultMap="ReadingPassageResultMap">
-        SELECT <include refid="Base_Column_List"/>
-        FROM reading_passage
-        WHERE id = #{id}
+    <select id="findActiveById" resultMap="BaseMap">
+        select *
+        from reading_passage
+        where id = #{id}
+          and is_deleted = 0
     </select>
 
-    <select id="findByTestId" resultMap="ReadingPassageResultMap">
-        SELECT <include refid="Base_Column_List"/>
-        FROM reading_passage
-        WHERE test_id = #{testId}
-        ORDER BY id ASC
+    <select id="findAnyById" resultMap="BaseMap">
+        select *
+        from reading_passage
+        where id = #{id}
     </select>
 
-    <update id="update"
+    <select id="findActiveByTestId" resultMap="BaseMap">
+        select *
+        from reading_passage
+        where test_id = #{testId}
+          and is_deleted = 0
+        order by id asc
+    </select>
+
+    <select id="findAnyByTestId" resultMap="BaseMap">
+        select *
+        from reading_passage
+        where test_id = #{testId}
+        order by id asc
+    </select>
+
+    <update id="updateReadingPassage"
             parameterType="com.andrew.smartielts.reading.domain.pojo.ReadingPassage">
-        UPDATE reading_passage
-        SET title = #{title},
-        content = #{content}
-        WHERE id = #{id}
+        update reading_passage
+        set title = #{title},
+            content = #{content}
+        where id = #{id}
     </update>
 
-    <delete id="deleteById">
-        DELETE FROM reading_passage
-        WHERE id = #{id}
-    </delete>
+    <update id="softDeleteById">
+        update reading_passage
+        set is_deleted = 1
+        where id = #{id}
+          and is_deleted = 0
+    </update>
 
-    <delete id="deleteByTestId">
-        DELETE FROM reading_passage
-        WHERE test_id = #{testId}
-    </delete>
+    <update id="softDeleteByTestId">
+        update reading_passage
+        set is_deleted = 1
+        where test_id = #{testId}
+          and is_deleted = 0
+    </update>
+
+    <update id="restoreById">
+        update reading_passage
+        set is_deleted = 0
+        where id = #{id}
+          and is_deleted = 1
+    </update>
+
+    <update id="restoreByTestId">
+        update reading_passage
+        set is_deleted = 0
+        where test_id = #{testId}
+          and is_deleted = 1
+    </update>
 
 </mapper>

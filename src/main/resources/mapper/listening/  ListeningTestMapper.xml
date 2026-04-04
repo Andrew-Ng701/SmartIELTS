@@ -11,6 +11,7 @@
         <result property="totalScore" column="total_score"/>
         <result property="audioObjectKey" column="audio_object_key"/>
         <result property="createdTime" column="created_time"/>
+        <result property="isDeleted" column="is_deleted"/>
     </resultMap>
 
     <insert id="insertListeningTest"
@@ -22,36 +23,47 @@
             audio_url,
             total_score,
             audio_object_key,
-            created_time
+            created_time,
+            is_deleted
         ) values (
                      #{title},
                      #{audioUrl},
                      #{totalScore},
                      #{audioObjectKey},
-                     #{createdTime}
+                     #{createdTime},
+                     0
                  )
     </insert>
 
-    <select id="findById" resultMap="ListeningTestResultMap">
-        select
-            id,
-            title,
-            audio_url,
-            total_score,
-            audio_object_key,
-            created_time
+    <select id="findActiveById" resultMap="ListeningTestResultMap">
+        select id, title, audio_url, total_score, audio_object_key, created_time, is_deleted
+        from listening_test
+        where id = #{id}
+          and is_deleted = 0
+    </select>
+
+    <select id="findAnyById" resultMap="ListeningTestResultMap">
+        select id, title, audio_url, total_score, audio_object_key, created_time, is_deleted
         from listening_test
         where id = #{id}
     </select>
 
-    <select id="findAll" resultMap="ListeningTestResultMap">
-        select
-            id,
-            title,
-            audio_url,
-            total_score,
-            audio_object_key,
-            created_time
+    <select id="findAllActive" resultMap="ListeningTestResultMap">
+        select id, title, audio_url, total_score, audio_object_key, created_time, is_deleted
+        from listening_test
+        where is_deleted = 0
+        order by id desc
+    </select>
+
+    <select id="findAllDeleted" resultMap="ListeningTestResultMap">
+        select id, title, audio_url, total_score, audio_object_key, created_time, is_deleted
+        from listening_test
+        where is_deleted = 1
+        order by id desc
+    </select>
+
+    <select id="findAllIncludingDeleted" resultMap="ListeningTestResultMap">
+        select id, title, audio_url, total_score, audio_object_key, created_time, is_deleted
         from listening_test
         order by id desc
     </select>
@@ -59,16 +71,24 @@
     <update id="updateListeningTest"
             parameterType="com.andrew.smartielts.listening.domain.pojo.ListeningTest">
         update listening_test
-        set
-            title = #{title},
+        set title = #{title},
             audio_url = #{audioUrl},
             total_score = #{totalScore},
             audio_object_key = #{audioObjectKey}
         where id = #{id}
     </update>
 
-    <delete id="deleteById">
-        delete from listening_test
+    <update id="softDeleteById">
+        update listening_test
+        set is_deleted = 1
         where id = #{id}
-    </delete>
+          and is_deleted = 0
+    </update>
+
+    <update id="restoreById">
+        update listening_test
+        set is_deleted = 0
+        where id = #{id}
+          and is_deleted = 1
+    </update>
 </mapper>

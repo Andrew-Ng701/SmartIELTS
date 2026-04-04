@@ -11,13 +11,21 @@ public interface ListeningQuestionMapper {
 
     void insertListeningQuestion(ListeningQuestion question);
 
-    ListeningQuestion findById(Long id);
+    ListeningQuestion findActiveById(@Param("id") Long id);
 
-    List<ListeningQuestion> findByTestId(@Param("testId") Long testId);
+    ListeningQuestion findAnyById(@Param("id") Long id);
+
+    List<ListeningQuestion> findActiveByTestId(@Param("testId") Long testId);
+
+    List<ListeningQuestion> findAnyByTestId(@Param("testId") Long testId);
 
     void updateListeningQuestion(ListeningQuestion question);
 
-    void deleteById(Long id);
+    void softDeleteById(@Param("id") Long id);
 
-    void deleteByTestId(@Param("testId") Long testId);
+    void softDeleteByTestId(@Param("testId") Long testId);
+
+    void restoreById(@Param("id") Long id);
+
+    void restoreByTestId(@Param("testId") Long testId);
 }

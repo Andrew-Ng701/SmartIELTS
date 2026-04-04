@@ -6,14 +6,10 @@ import java.time.LocalDateTime;
 
 @Data
 public class ListeningRecord {
-
     private Long id;
-
     private Long userId;
-
     private Long testId;
-
     private Integer totalScore;
-
+    private Integer isDeleted;
     private LocalDateTime createdTime;
 }

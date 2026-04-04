@@ -16,4 +16,5 @@ public class ReadingQuestion {
     private String groupLabel;
     private Integer displayOrder;
     private Integer score;
+    private Integer isDeleted;
 }

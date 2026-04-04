@@ -14,4 +14,6 @@ public class ReadingTest {
     private Integer totalScore;
 
     private LocalDateTime createdTime;
+
+    private Integer isDeleted;
 }

@@ -19,7 +19,6 @@ public class AliyunBailianAsrClient {
 
     public AliyunBailianAsrClient(AliyunBailianAsrProperties props) {
         this.props = props;
-        log.info("ASR props endpoint={}, region={}", props.getEndpoint(), props.getRegion());
     }
 
     /**

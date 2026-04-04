@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.andrew.smartielts.auth.mapper.AuthMapper">
+
+    <resultMap id="UserMap" type="com.andrew.smartielts.auth.domain.pojo.User">
+        <id property="id" column="id"/>
+        <result property="email" column="email"/>
+        <result property="password" column="password"/>
+        <result property="role" column="role"/>
+        <result property="isDeleted" column="is_deleted"/>
+        <result property="deletedTime" column="deleted_time"/>
+        <result property="createdTime" column="created_time"/>
+        <result property="tokenVersion" column="token_version"/>
+    </resultMap>
+
+    <sql id="Base_Column_List">
+        id, email, password, role, is_deleted, deleted_time, created_time, token_version
+    </sql>
+
+    <select id="findActiveByEmail" resultMap="UserMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM sys_user
+        WHERE email = #{email}
+        AND is_deleted = 0
+        LIMIT 1
+    </select>
+
+    <select id="findAnyByEmail" resultMap="UserMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM sys_user
+        WHERE email = #{email}
+        LIMIT 1
+    </select>
+
+    <select id="findActiveById" resultMap="UserMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM sys_user
+        WHERE id = #{id}
+        AND is_deleted = 0
+        LIMIT 1
+    </select>
+
+    <select id="existsByEmail" resultType="java.lang.Boolean">
+        SELECT COUNT(1) > 0
+        FROM sys_user
+        WHERE email = #{email}
+    </select>
+
+    <insert id="save"
+            parameterType="com.andrew.smartielts.auth.domain.pojo.User"
+            useGeneratedKeys="true"
+            keyProperty="id">
+        INSERT INTO sys_user (
+            email, password, role, is_deleted, deleted_time, created_time, token_version
+        ) VALUES (
+                     #{email}, #{password}, #{role}, #{isDeleted}, #{deletedTime}, #{createdTime}, #{tokenVersion}
+                 )
+    </insert>
+
+    <update id="updatePasswordById">
+        UPDATE sys_user
+        SET password = #{password}
+        WHERE id = #{id}
+          AND is_deleted = 0
+    </update>
+
+    <update id="incrementTokenVersionById">
+        UPDATE sys_user
+        SET token_version = token_version + 1
+        WHERE id = #{id}
+          AND is_deleted = 0
+    </update>
+
+</mapper>

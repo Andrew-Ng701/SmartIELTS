@@ -1,5 +1,7 @@
 package com.andrew.smartielts.reading.service.user.impl;
 
+import com.andrew.smartielts.common.constants.RecordQueryValidator;
+import com.andrew.smartielts.common.page.PageResult;
 import com.andrew.smartielts.reading.domain.dto.ReadingAnswerDTO;
 import com.andrew.smartielts.reading.domain.dto.ReadingSubmitDTO;
 import com.andrew.smartielts.reading.domain.pojo.ReadingAnswerRecord;
@@ -7,6 +9,8 @@ import com.andrew.smartielts.reading.domain.pojo.ReadingPassage;
 import com.andrew.smartielts.reading.domain.pojo.ReadingQuestion;
 import com.andrew.smartielts.reading.domain.pojo.ReadingRecord;
 import com.andrew.smartielts.reading.domain.pojo.ReadingTest;
+import com.andrew.smartielts.reading.domain.query.user.UserReadingDeletedRecordPageQuery;
+import com.andrew.smartielts.reading.domain.query.user.UserReadingRecordPageQuery;
 import com.andrew.smartielts.reading.domain.vo.ReadingAnswerResultVO;
 import com.andrew.smartielts.reading.domain.vo.ReadingPassageVO;
 import com.andrew.smartielts.reading.domain.vo.ReadingQuestionVO;
@@ -35,16 +39,12 @@ public class UserReadingServiceImpl implements UserReadingService {
 
     @Autowired
     private ReadingTestMapper readingTestMapper;
-
     @Autowired
     private ReadingPassageMapper readingPassageMapper;
-
     @Autowired
     private ReadingQuestionMapper readingQuestionMapper;
-
     @Autowired
     private ReadingRecordMapper readingRecordMapper;
-
     @Autowired
     private ReadingAnswerRecordMapper readingAnswerRecordMapper;
 
@@ -52,17 +52,17 @@ public class UserReadingServiceImpl implements UserReadingService {
 
     @Override
     public List<ReadingTest> listTests() {
-        return readingTestMapper.findAll();
+        return readingTestMapper.findAllActive();
     }
 
     @Override
     public ReadingTestDetailVO getTestDetail(Long testId) {
-        ReadingTest test = readingTestMapper.findById(testId);
+        ReadingTest test = readingTestMapper.findActiveById(testId);
         if (test == null) {
             throw new RuntimeException("Reading test not found");
         }
 
-        List<ReadingPassage> passages = readingPassageMapper.findByTestId(testId);
+        List<ReadingPassage> passages = readingPassageMapper.findActiveByTestId(testId);
         List<ReadingPassageVO> passageVOList = new ArrayList<>();
 
         for (ReadingPassage passage : passages) {
@@ -71,7 +71,7 @@ public class UserReadingServiceImpl implements UserReadingService {
             passageVO.setTitle(passage.getTitle());
             passageVO.setContent(passage.getContent());
 
-            List<ReadingQuestion> questions = readingQuestionMapper.findByPassageId(passage.getId());
+            List<ReadingQuestion> questions = readingQuestionMapper.findActiveByPassageId(passage.getId());
             List<ReadingQuestionVO> questionVOList = new ArrayList<>();
 
             for (ReadingQuestion question : questions) {
@@ -96,7 +96,6 @@ public class UserReadingServiceImpl implements UserReadingService {
         detailVO.setTitle(test.getTitle());
         detailVO.setTotalScore(test.getTotalScore());
         detailVO.setPassages(passageVOList);
-
         return detailVO;
     }
 
@@ -105,15 +104,15 @@ public class UserReadingServiceImpl implements UserReadingService {
     public ReadingRecordDetailVO submit(Long testId, ReadingSubmitDTO dto) {
         Long userId = SecurityUtils.getCurrentUserId();
 
-        ReadingTest test = readingTestMapper.findById(testId);
+        ReadingTest test = readingTestMapper.findActiveById(testId);
         if (test == null) {
             throw new RuntimeException("Reading test not found");
         }
 
-        List<ReadingPassage> passages = readingPassageMapper.findByTestId(testId);
+        List<ReadingPassage> passages = readingPassageMapper.findActiveByTestId(testId);
         List<ReadingQuestion> allQuestions = new ArrayList<>();
         for (ReadingPassage passage : passages) {
-            allQuestions.addAll(readingQuestionMapper.findByPassageId(passage.getId()));
+            allQuestions.addAll(readingQuestionMapper.findActiveByPassageId(passage.getId()));
         }
 
         ReadingRecord record = new ReadingRecord();
@@ -121,7 +120,8 @@ public class UserReadingServiceImpl implements UserReadingService {
         record.setTestId(testId);
         record.setTotalScore(0);
         record.setCreatedTime(LocalDateTime.now());
-        readingRecordMapper.insert(record);
+        record.setIsDeleted(0);
+        readingRecordMapper.insertReadingRecord(record);
 
         Map<Long, ReadingAnswerDTO> answerMap = new HashMap<>();
         if (dto.getAnswers() != null) {
@@ -148,7 +148,7 @@ public class UserReadingServiceImpl implements UserReadingService {
             answerRecord.setUserAnswer(buildStoredUserAnswer(userAnswer, userAnswers));
             answerRecord.setIsCorrect(correct ? 1 : 0);
             answerRecord.setScore(score);
-            readingAnswerRecordMapper.insert(answerRecord);
+            readingAnswerRecordMapper.insertReadingAnswerRecord(answerRecord);
 
             ReadingAnswerResultVO resultVO = new ReadingAnswerResultVO();
             resultVO.setQuestionId(question.getId());
@@ -170,44 +170,84 @@ public class UserReadingServiceImpl implements UserReadingService {
         detailVO.setTotalScore(record.getTotalScore());
         detailVO.setCreatedTime(record.getCreatedTime());
         detailVO.setAnswers(answerResults);
-
         return detailVO;
     }
 
     @Override
-    public List<ReadingRecordVO> myRecords(Long userId) {
-        List<ReadingRecord> records = readingRecordMapper.findByUserId(userId);
-        List<ReadingRecordVO> voList = new ArrayList<>();
+    public PageResult<ReadingRecordVO> pageActiveRecords(Long userId, UserReadingRecordPageQuery query) {
+        UserReadingRecordPageQuery safeQuery = query == null ? new UserReadingRecordPageQuery() : query;
 
-        for (ReadingRecord record : records) {
-            ReadingRecordVO vo = new ReadingRecordVO();
-            vo.setId(record.getId());
-            vo.setTestId(record.getTestId());
-            vo.setTotalScore(record.getTotalScore());
-            vo.setCreatedTime(record.getCreatedTime());
-            voList.add(vo);
+        RecordQueryValidator.validate(
+                safeQuery.getPageNum(),
+                safeQuery.getPageSize(),
+                userId,
+                safeQuery.getTestId(),
+                safeQuery.getMinScore(),
+                safeQuery.getMaxScore(),
+                safeQuery.getStartTime(),
+                safeQuery.getEndTime()
+        );
+
+        int pageNum = normalizePageNum(safeQuery.getPageNum());
+        int pageSize = normalizePageSize(safeQuery.getPageSize());
+        int offset = (pageNum - 1) * pageSize;
+
+        Long total = readingRecordMapper.countUserActive(userId, safeQuery);
+        if (total == null || total == 0L) {
+            return new PageResult<>(new ArrayList<>(), 0L, pageNum, pageSize);
         }
 
-        return voList;
+        List<ReadingRecord> records = readingRecordMapper.pageUserActive(userId, safeQuery, offset, pageSize);
+        List<ReadingRecordVO> voList = new ArrayList<>();
+
+        if (records != null) {
+            for (ReadingRecord record : records) {
+                voList.add(toRecordVO(record));
+            }
+        }
+
+        return new PageResult<>(voList, total, pageNum, pageSize);
+    }
+
+    @Override
+    public PageResult<ReadingRecordVO> pageDeletedRecords(Long userId, UserReadingDeletedRecordPageQuery query) {
+        UserReadingDeletedRecordPageQuery safeQuery =
+                query == null ? new UserReadingDeletedRecordPageQuery() : query;
+
+        int pageNum = normalizePageNum(safeQuery.getPageNum());
+        int pageSize = normalizePageSize(safeQuery.getPageSize());
+        int offset = (pageNum - 1) * pageSize;
+
+        Long total = readingRecordMapper.countUserDeleted(userId, safeQuery);
+        if (total == null || total == 0L) {
+            return new PageResult<>(new ArrayList<>(), 0L, pageNum, pageSize);
+        }
+
+        List<ReadingRecord> records = readingRecordMapper.pageUserDeleted(userId, safeQuery, offset, pageSize);
+        List<ReadingRecordVO> voList = new ArrayList<>();
+
+        if (records != null) {
+            for (ReadingRecord record : records) {
+                voList.add(toRecordVO(record));
+            }
+        }
+
+        return new PageResult<>(voList, total, pageNum, pageSize);
     }
 
     @Override
     public ReadingRecordDetailVO getRecord(Long recordId, Long userId) {
-        ReadingRecord record = readingRecordMapper.findById(recordId);
+        ReadingRecord record = readingRecordMapper.findAnyByIdForUser(recordId, userId);
         if (record == null) {
             throw new RuntimeException("Reading record not found");
         }
 
-        if (!record.getUserId().equals(userId)) {
-            throw new RuntimeException("No permission to access this record");
-        }
-
-        ReadingTest test = readingTestMapper.findById(record.getTestId());
+        ReadingTest test = readingTestMapper.findAnyById(record.getTestId());
         List<ReadingAnswerRecord> answerRecords = readingAnswerRecordMapper.findByRecordId(recordId);
         List<ReadingAnswerResultVO> answerResults = new ArrayList<>();
 
         for (ReadingAnswerRecord answerRecord : answerRecords) {
-            ReadingQuestion question = readingQuestionMapper.findById(answerRecord.getQuestionId());
+            ReadingQuestion question = readingQuestionMapper.findAnyById(answerRecord.getQuestionId());
 
             ReadingAnswerResultVO vo = new ReadingAnswerResultVO();
             vo.setQuestionId(answerRecord.getQuestionId());
@@ -226,36 +266,74 @@ public class UserReadingServiceImpl implements UserReadingService {
         detailVO.setTotalScore(record.getTotalScore());
         detailVO.setCreatedTime(record.getCreatedTime());
         detailVO.setAnswers(answerResults);
-
         return detailVO;
+    }
+
+    @Override
+    @Transactional
+    public void deleteRecord(Long recordId, Long userId) {
+        ReadingRecord record = readingRecordMapper.findAnyByIdForUser(recordId, userId);
+        if (record == null) {
+            throw new RuntimeException("Reading record not found");
+        }
+        readingRecordMapper.softDeleteByIdForUser(recordId, userId);
+    }
+
+    @Override
+    @Transactional
+    public void restoreRecord(Long recordId, Long userId) {
+        ReadingRecord record = readingRecordMapper.findAnyByIdForUser(recordId, userId);
+        if (record == null) {
+            throw new RuntimeException("Reading record not found");
+        }
+        readingRecordMapper.restoreByIdForUser(recordId, userId);
+    }
+
+    private ReadingRecordVO toRecordVO(ReadingRecord record) {
+        ReadingRecordVO vo = new ReadingRecordVO();
+        vo.setId(record.getId());
+        vo.setUserId(record.getUserId());
+        vo.setTestId(record.getTestId());
+        vo.setTotalScore(record.getTotalScore());
+        vo.setCreatedTime(record.getCreatedTime());
+        vo.setIsDeleted(record.getIsDeleted());
+
+        ReadingTest test = readingTestMapper.findAnyById(record.getTestId());
+        vo.setTestTitle(test != null ? test.getTitle() : null);
+        return vo;
+    }
+
+    private int normalizePageNum(Integer pageNum) {
+        return pageNum == null || pageNum < 1 ? 1 : pageNum;
+    }
+
+    private int normalizePageSize(Integer pageSize) {
+        if (pageSize == null || pageSize < 1) {
+            return 10;
+        }
+        return Math.min(pageSize, 100);
     }
 
     private boolean judgeAnswer(ReadingQuestion question, String userAnswer, List<String> userAnswers) {
         if (question == null) {
             return false;
         }
-
         String answerMode = question.getAnswerMode();
         if (answerMode == null || answerMode.isBlank()) {
             answerMode = "TEXT";
         }
-
-        switch (answerMode) {
-            case "SINGLE":
-                return matchSingle(question, userAnswer);
-            case "MULTI":
-                return matchMulti(question, userAnswers);
-            case "TEXT":
-            default:
-                return matchText(question, userAnswer);
-        }
+        return switch (answerMode) {
+            case "SINGLE" -> matchSingle(question, userAnswer);
+            case "MULTI" -> matchMulti(question, userAnswers);
+            case "TEXT" -> matchText(question, userAnswer);
+            default -> matchText(question, userAnswer);
+        };
     }
 
     private boolean matchSingle(ReadingQuestion question, String userAnswer) {
         if (userAnswer == null || userAnswer.isBlank()) {
             return false;
         }
-
         List<String> accepted = parseJsonArray(question.getAcceptedAnswersJson());
         if (!accepted.isEmpty()) {
             for (String item : accepted) {
@@ -265,7 +343,6 @@ public class UserReadingServiceImpl implements UserReadingService {
             }
             return false;
         }
-
         return normalize(userAnswer).equals(normalize(question.getCorrectAnswer()));
     }
 
@@ -273,7 +350,6 @@ public class UserReadingServiceImpl implements UserReadingService {
         if (userAnswers == null || userAnswers.isEmpty()) {
             return false;
         }
-
         List<String> correctList = parseJsonArray(question.getAcceptedAnswersJson());
         if (correctList.isEmpty()) {
             correctList = parseCsv(question.getCorrectAnswer());
@@ -300,7 +376,6 @@ public class UserReadingServiceImpl implements UserReadingService {
         if (userAnswer == null || userAnswer.isBlank()) {
             return false;
         }
-
         List<String> accepted = parseJsonArray(question.getAcceptedAnswersJson());
         if (!accepted.isEmpty()) {
             for (String item : accepted) {
@@ -310,7 +385,6 @@ public class UserReadingServiceImpl implements UserReadingService {
             }
             return false;
         }
-
         return normalize(userAnswer).equals(normalize(question.getCorrectAnswer()));
     }
 
@@ -360,6 +434,6 @@ public class UserReadingServiceImpl implements UserReadingService {
         return s.trim()
                 .toLowerCase()
                 .replaceAll("\\s+", " ")
-                .replaceAll("[.,;:!?]", "");
+                .replaceAll("[.,!?]", "");
     }
 }

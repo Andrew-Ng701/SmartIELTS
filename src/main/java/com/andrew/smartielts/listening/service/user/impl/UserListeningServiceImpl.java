@@ -1,11 +1,15 @@
 package com.andrew.smartielts.listening.service.user.impl;
 
+import com.andrew.smartielts.common.constants.RecordQueryValidator;
+import com.andrew.smartielts.common.page.PageResult;
 import com.andrew.smartielts.listening.domain.dto.ListeningAnswerDTO;
 import com.andrew.smartielts.listening.domain.dto.ListeningSubmitDTO;
 import com.andrew.smartielts.listening.domain.pojo.ListeningAnswerRecord;
 import com.andrew.smartielts.listening.domain.pojo.ListeningQuestion;
 import com.andrew.smartielts.listening.domain.pojo.ListeningRecord;
 import com.andrew.smartielts.listening.domain.pojo.ListeningTest;
+import com.andrew.smartielts.listening.domain.query.user.UserListeningDeletedRecordPageQuery;
+import com.andrew.smartielts.listening.domain.query.user.UserListeningRecordPageQuery;
 import com.andrew.smartielts.listening.domain.vo.ListeningAnswerResultVO;
 import com.andrew.smartielts.listening.domain.vo.ListeningQuestionVO;
 import com.andrew.smartielts.listening.domain.vo.ListeningRecordDetailVO;
@@ -16,6 +20,7 @@ import com.andrew.smartielts.listening.mapper.ListeningQuestionMapper;
 import com.andrew.smartielts.listening.mapper.ListeningRecordMapper;
 import com.andrew.smartielts.listening.mapper.ListeningTestMapper;
 import com.andrew.smartielts.listening.service.user.UserListeningService;
+import com.andrew.smartielts.utils.SecurityUtils;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -23,7 +28,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 
 @Service
 public class UserListeningServiceImpl implements UserListeningService {
@@ -44,17 +53,17 @@ public class UserListeningServiceImpl implements UserListeningService {
 
     @Override
     public List<ListeningTest> listTests() {
-        return listeningTestMapper.findAll();
+        return listeningTestMapper.findAllActive();
     }
 
     @Override
     public ListeningTestDetailVO getTestDetail(Long testId) {
-        ListeningTest test = listeningTestMapper.findById(testId);
+        ListeningTest test = listeningTestMapper.findActiveById(testId);
         if (test == null) {
             throw new RuntimeException("Listening test not found");
         }
 
-        List<ListeningQuestion> questions = listeningQuestionMapper.findByTestId(testId);
+        List<ListeningQuestion> questions = listeningQuestionMapper.findActiveByTestId(testId);
         List<ListeningQuestionVO> questionVOList = new ArrayList<>();
 
         for (ListeningQuestion question : questions) {
@@ -83,19 +92,20 @@ public class UserListeningServiceImpl implements UserListeningService {
     @Override
     @Transactional
     public ListeningRecordDetailVO submit(Long testId, ListeningSubmitDTO dto) {
-        Long userId = com.andrew.smartielts.utils.SecurityUtils.getCurrentUserId();
+        Long userId = SecurityUtils.getCurrentUserId();
 
-        ListeningTest test = listeningTestMapper.findById(testId);
+        ListeningTest test = listeningTestMapper.findActiveById(testId);
         if (test == null) {
             throw new RuntimeException("Listening test not found");
         }
 
-        List<ListeningQuestion> allQuestions = listeningQuestionMapper.findByTestId(testId);
+        List<ListeningQuestion> allQuestions = listeningQuestionMapper.findActiveByTestId(testId);
 
         ListeningRecord record = new ListeningRecord();
         record.setUserId(userId);
         record.setTestId(testId);
         record.setTotalScore(0);
+        record.setIsDeleted(0);
         record.setCreatedTime(LocalDateTime.now());
         listeningRecordMapper.insert(record);
 
@@ -147,6 +157,7 @@ public class UserListeningServiceImpl implements UserListeningService {
         detailVO.setRecordId(record.getId());
         detailVO.setTestId(record.getTestId());
         detailVO.setTestTitle(test.getTitle());
+        detailVO.setAudioUrl(test.getAudioUrl());
         detailVO.setTotalScore(record.getTotalScore());
         detailVO.setCreatedTime(record.getCreatedTime());
         detailVO.setAnswers(answerResults);
@@ -154,39 +165,81 @@ public class UserListeningServiceImpl implements UserListeningService {
     }
 
     @Override
-    public List<ListeningRecordVO> myRecords(Long userId) {
-        List<ListeningRecord> records = listeningRecordMapper.findByUserId(userId);
-        List<ListeningRecordVO> voList = new ArrayList<>();
+    public PageResult<ListeningRecordVO> pageActiveRecords(Long userId, UserListeningRecordPageQuery query) {
+        UserListeningRecordPageQuery safeQuery = query == null ? new UserListeningRecordPageQuery() : query;
 
-        for (ListeningRecord record : records) {
-            ListeningRecordVO vo = new ListeningRecordVO();
-            vo.setId(record.getId());
-            vo.setTestId(record.getTestId());
-            vo.setTotalScore(record.getTotalScore());
-            vo.setCreatedTime(record.getCreatedTime());
-            voList.add(vo);
+        RecordQueryValidator.validate(
+                safeQuery.getPageNum(),
+                safeQuery.getPageSize(),
+                userId,
+                safeQuery.getTestId(),
+                safeQuery.getMinScore(),
+                safeQuery.getMaxScore(),
+                safeQuery.getStartTime(),
+                safeQuery.getEndTime()
+        );
+
+        int pageNum = normalizePageNum(safeQuery.getPageNum());
+        int pageSize = normalizePageSize(safeQuery.getPageSize());
+        int offset = (pageNum - 1) * pageSize;
+
+        Long total = listeningRecordMapper.countUserActive(userId, safeQuery);
+        if (total == null || total == 0L) {
+            return new PageResult<>(new ArrayList<>(), 0L, pageNum, pageSize);
         }
 
-        return voList;
+        List<ListeningRecord> records = listeningRecordMapper.pageUserActive(userId, safeQuery, offset, pageSize);
+        List<ListeningRecordVO> voList = new ArrayList<>();
+
+        if (records != null) {
+            for (ListeningRecord record : records) {
+                voList.add(toRecordVO(record));
+            }
+        }
+
+        return new PageResult<>(voList, total, pageNum, pageSize);
+    }
+
+    @Override
+    public PageResult<ListeningRecordVO> pageDeletedRecords(Long userId, UserListeningDeletedRecordPageQuery query) {
+        UserListeningDeletedRecordPageQuery safeQuery =
+                query == null ? new UserListeningDeletedRecordPageQuery() : query;
+
+        int pageNum = normalizePageNum(safeQuery.getPageNum());
+        int pageSize = normalizePageSize(safeQuery.getPageSize());
+        int offset = (pageNum - 1) * pageSize;
+
+        Long total = listeningRecordMapper.countUserDeleted(userId, safeQuery);
+        if (total == null || total == 0L) {
+            return new PageResult<>(new ArrayList<>(), 0L, pageNum, pageSize);
+        }
+
+        List<ListeningRecord> records = listeningRecordMapper.pageUserDeleted(userId, safeQuery, offset, pageSize);
+        List<ListeningRecordVO> voList = new ArrayList<>();
+
+        if (records != null) {
+            for (ListeningRecord record : records) {
+                voList.add(toRecordVO(record));
+            }
+        }
+
+        return new PageResult<>(voList, total, pageNum, pageSize);
     }
 
     @Override
     public ListeningRecordDetailVO getRecord(Long recordId, Long userId) {
-        ListeningRecord record = listeningRecordMapper.findById(recordId);
+        ListeningRecord record = listeningRecordMapper.findAnyByIdForUser(recordId, userId);
         if (record == null) {
             throw new RuntimeException("Listening record not found");
         }
 
-        if (!record.getUserId().equals(userId)) {
-            throw new RuntimeException("No permission to access this record");
-        }
-
-        ListeningTest test = listeningTestMapper.findById(record.getTestId());
+        ListeningTest test = listeningTestMapper.findAnyById(record.getTestId());
+        List<ListeningQuestion> questions = listeningQuestionMapper.findAnyByTestId(record.getTestId());
         List<ListeningAnswerRecord> answerRecords = listeningAnswerRecordMapper.findByRecordId(recordId);
         List<ListeningAnswerResultVO> answerResults = new ArrayList<>();
 
         for (ListeningAnswerRecord answerRecord : answerRecords) {
-            ListeningQuestion question = listeningQuestionMapper.findById(answerRecord.getQuestionId());
+            ListeningQuestion question = listeningQuestionMapper.findAnyById(answerRecord.getQuestionId());
 
             ListeningAnswerResultVO vo = new ListeningAnswerResultVO();
             vo.setQuestionId(answerRecord.getQuestionId());
@@ -202,42 +255,101 @@ public class UserListeningServiceImpl implements UserListeningService {
             answerResults.add(vo);
         }
 
+        List<ListeningQuestionVO> questionVOList = new ArrayList<>();
+        for (ListeningQuestion question : questions) {
+            ListeningQuestionVO vo = new ListeningQuestionVO();
+            vo.setId(question.getId());
+            vo.setSectionNumber(question.getSectionNumber());
+            vo.setQuestionNumber(question.getQuestionNumber());
+            vo.setQuestionType(question.getQuestionType());
+            vo.setAnswerMode(question.getAnswerMode());
+            vo.setQuestionText(question.getQuestionText());
+            vo.setOptionsJson(question.getOptionsJson());
+            vo.setDisplayOrder(question.getDisplayOrder());
+            vo.setScore(question.getScore());
+            questionVOList.add(vo);
+        }
+
         ListeningRecordDetailVO detailVO = new ListeningRecordDetailVO();
         detailVO.setRecordId(record.getId());
         detailVO.setTestId(record.getTestId());
         detailVO.setTestTitle(test != null ? test.getTitle() : null);
+        detailVO.setAudioUrl(test != null ? test.getAudioUrl() : null);
         detailVO.setTotalScore(record.getTotalScore());
         detailVO.setCreatedTime(record.getCreatedTime());
+        detailVO.setQuestions(questionVOList);
         detailVO.setAnswers(answerResults);
         return detailVO;
+    }
+
+    @Override
+    @Transactional
+    public void deleteRecord(Long recordId, Long userId) {
+        ListeningRecord record = listeningRecordMapper.findAnyByIdForUser(recordId, userId);
+        if (record == null) {
+            throw new RuntimeException("Listening record not found");
+        }
+        listeningRecordMapper.softDeleteByIdForUser(recordId, userId);
+    }
+
+    @Override
+    @Transactional
+    public void restoreRecord(Long recordId, Long userId) {
+        ListeningRecord record = listeningRecordMapper.findAnyByIdForUser(recordId, userId);
+        if (record == null) {
+            throw new RuntimeException("Listening record not found");
+        }
+        listeningRecordMapper.restoreByIdForUser(recordId, userId);
+    }
+
+    private ListeningRecordVO toRecordVO(ListeningRecord record) {
+        ListeningRecordVO vo = new ListeningRecordVO();
+        vo.setId(record.getId());
+        vo.setUserId(record.getUserId());
+        vo.setTestId(record.getTestId());
+        vo.setTestTitle(getTestTitle(record.getTestId()));
+        vo.setTotalScore(record.getTotalScore());
+        vo.setCreatedTime(record.getCreatedTime());
+        vo.setIsDeleted(record.getIsDeleted());
+        return vo;
+    }
+
+    private String getTestTitle(Long testId) {
+        ListeningTest test = listeningTestMapper.findAnyById(testId);
+        return test != null ? test.getTitle() : null;
+    }
+
+    private int normalizePageNum(Integer pageNum) {
+        return pageNum == null || pageNum < 1 ? 1 : pageNum;
+    }
+
+    private int normalizePageSize(Integer pageSize) {
+        if (pageSize == null || pageSize < 1) {
+            return 10;
+        }
+        return Math.min(pageSize, 100);
     }
 
     private boolean judgeAnswer(ListeningQuestion question, String userAnswer, List<String> userAnswers) {
         if (question == null) {
             return false;
         }
-
         String answerMode = question.getAnswerMode();
         if (answerMode == null || answerMode.isBlank()) {
             answerMode = "TEXT";
         }
-
-        switch (answerMode) {
-            case "SINGLE":
-                return matchSingle(question, userAnswer);
-            case "MULTI":
-                return matchMulti(question, userAnswers);
-            case "TEXT":
-            default:
-                return matchText(question, userAnswer);
-        }
+        return switch (answerMode) {
+            case "SINGLE" -> matchSingle(question, userAnswer);
+            case "MULTI" -> matchMulti(question, userAnswers);
+            case "TEXT" -> matchText(question, userAnswer);
+            default -> matchText(question, userAnswer);
+        };
     }
 
     private boolean matchSingle(ListeningQuestion question, String userAnswer) {
         if (userAnswer == null || userAnswer.isBlank()) {
             return false;
         }
-
         List<String> accepted = parseJsonArray(question.getAcceptedAnswersJson());
         if (!accepted.isEmpty()) {
             for (String item : accepted) {
@@ -247,7 +359,6 @@ public class UserListeningServiceImpl implements UserListeningService {
             }
             return false;
         }
-
         return normalize(userAnswer).equals(normalize(question.getCorrectAnswer()));
     }
 
@@ -282,7 +393,6 @@ public class UserListeningServiceImpl implements UserListeningService {
         if (userAnswer == null || userAnswer.isBlank()) {
             return false;
         }
-
         List<String> accepted = parseJsonArray(question.getAcceptedAnswersJson());
         if (!accepted.isEmpty()) {
             for (String item : accepted) {
@@ -292,7 +402,6 @@ public class UserListeningServiceImpl implements UserListeningService {
             }
             return false;
         }
-
         return normalize(userAnswer).equals(normalize(question.getCorrectAnswer()));
     }
 
@@ -342,6 +451,6 @@ public class UserListeningServiceImpl implements UserListeningService {
         return s.trim()
                 .toLowerCase()
                 .replaceAll("\\s+", " ")
-                .replaceAll("[.,;:!?]", "");
+                .replaceAll("[.,!?]", "");
     }
 }

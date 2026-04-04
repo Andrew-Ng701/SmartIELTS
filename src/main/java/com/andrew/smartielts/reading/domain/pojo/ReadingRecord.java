@@ -16,4 +16,6 @@ public class ReadingRecord {
     private Integer totalScore;
 
     private LocalDateTime createdTime;
+
+    private Integer isDeleted;
 }

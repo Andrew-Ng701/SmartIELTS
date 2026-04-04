@@ -7,16 +7,13 @@ import java.util.List;
 
 @Data
 public class ListeningRecordDetailVO {
-
     private Long recordId;
-
     private Long testId;
-
     private String testTitle;
-
+    private String audioUrl;
     private Integer totalScore;
-
     private LocalDateTime createdTime;
 
+    private List<ListeningQuestionVO> questions;
     private List<ListeningAnswerResultVO> answers;
 }

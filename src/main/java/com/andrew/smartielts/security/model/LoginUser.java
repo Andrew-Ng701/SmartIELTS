@@ -9,13 +9,16 @@ public class LoginUser implements UserDetails {
 
     private Long userId;
     private String role;
+    private Long tokenVersion;
     private Collection<? extends GrantedAuthority> authorities;
 
     public LoginUser(Long userId,
                      String role,
+                     Long tokenVersion,
                      Collection<? extends GrantedAuthority> authorities) {
         this.userId = userId;
         this.role = role;
+        this.tokenVersion = tokenVersion;
         this.authorities = authorities;
     }
 
@@ -27,26 +30,42 @@ public class LoginUser implements UserDetails {
         return role;
     }
 
+    public Long getTokenVersion() {
+        return tokenVersion;
+    }
+
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
         return authorities;
     }
 
     @Override
-    public String getPassword() { return null; }
+    public String getPassword() {
+        return null;
+    }
 
     @Override
-    public String getUsername() { return userId.toString(); }
+    public String getUsername() {
+        return userId != null ? userId.toString() : null;
+    }
 
     @Override
-    public boolean isAccountNonExpired() { return true; }
+    public boolean isAccountNonExpired() {
+        return true;
+    }
 
     @Override
-    public boolean isAccountNonLocked() { return true; }
+    public boolean isAccountNonLocked() {
+        return true;
+    }
 
     @Override
-    public boolean isCredentialsNonExpired() { return true; }
+    public boolean isCredentialsNonExpired() {
+        return true;
+    }
 
     @Override
-    public boolean isEnabled() { return true; }
+    public boolean isEnabled() {
+        return true;
+    }
 }

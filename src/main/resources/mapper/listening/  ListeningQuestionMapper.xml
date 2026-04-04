@@ -17,45 +17,61 @@
         <result column="accepted_answers_json" property="acceptedAnswersJson"/>
         <result column="display_order" property="displayOrder"/>
         <result column="score" property="score"/>
+        <result column="is_deleted" property="isDeleted"/>
     </resultMap>
 
     <sql id="Base_Column_List">
         id, test_id, section_number, question_number, question_type, answer_mode,
         question_text, correct_answer, options_json, accepted_answers_json,
-        display_order, score
+        display_order, score, is_deleted
     </sql>
 
-    <insert id="insertListeningQuestion" parameterType="com.andrew.smartielts.listening.domain.pojo.ListeningQuestion"
+    <insert id="insertListeningQuestion"
+            parameterType="com.andrew.smartielts.listening.domain.pojo.ListeningQuestion"
             useGeneratedKeys="true" keyProperty="id" keyColumn="id">
-        INSERT INTO listening_question (
+        insert into listening_question (
         test_id, section_number, question_number, question_type, answer_mode,
         question_text, correct_answer, options_json, accepted_answers_json,
-        display_order, score
-        )
-        VALUES (
+        display_order, score, is_deleted
+        ) values (
         #{testId}, #{sectionNumber}, #{questionNumber}, #{questionType}, #{answerMode},
         #{questionText}, #{correctAnswer}, #{optionsJson}, #{acceptedAnswersJson},
-        #{displayOrder}, #{score}
+        #{displayOrder}, #{score}, 0
         )
     </insert>
 
-    <select id="findById" parameterType="java.lang.Long" resultMap="ListeningQuestionResultMap">
-        SELECT <include refid="Base_Column_List"/>
-        FROM listening_question
-        WHERE id = #{id}
+    <select id="findActiveById" resultMap="ListeningQuestionResultMap">
+        select <include refid="Base_Column_List"/>
+        from listening_question
+        where id = #{id}
+        and is_deleted = 0
     </select>
 
-    <select id="findByTestId" parameterType="java.lang.Long" resultMap="ListeningQuestionResultMap">
-        SELECT <include refid="Base_Column_List"/>
-        FROM listening_question
-        WHERE test_id = #{testId}
-        ORDER BY display_order ASC, question_number ASC, id ASC
+    <select id="findAnyById" resultMap="ListeningQuestionResultMap">
+        select <include refid="Base_Column_List"/>
+        from listening_question
+        where id = #{id}
     </select>
 
-    <update id="updateListeningQuestion" parameterType="com.andrew.smartielts.listening.domain.pojo.ListeningQuestion">
-        UPDATE listening_question
-        SET
-        section_number = #{sectionNumber},
+    <select id="findActiveByTestId" resultMap="ListeningQuestionResultMap">
+        select <include refid="Base_Column_List"/>
+        from listening_question
+        where test_id = #{testId}
+        and is_deleted = 0
+        order by display_order asc, question_number asc, id asc
+    </select>
+
+    <select id="findAnyByTestId" resultMap="ListeningQuestionResultMap">
+        select <include refid="Base_Column_List"/>
+        from listening_question
+        where test_id = #{testId}
+        order by display_order asc, question_number asc, id asc
+    </select>
+
+    <update id="updateListeningQuestion"
+            parameterType="com.andrew.smartielts.listening.domain.pojo.ListeningQuestion">
+        update listening_question
+        set section_number = #{sectionNumber},
         question_number = #{questionNumber},
         question_type = #{questionType},
         answer_mode = #{answerMode},
@@ -65,17 +81,34 @@
         accepted_answers_json = #{acceptedAnswersJson},
         display_order = #{displayOrder},
         score = #{score}
-        WHERE id = #{id}
+        where id = #{id}
     </update>
 
-    <delete id="deleteById" parameterType="java.lang.Long">
-        DELETE FROM listening_question
-        WHERE id = #{id}
-    </delete>
+    <update id="softDeleteById">
+        update listening_question
+        set is_deleted = 1
+        where id = #{id}
+        and is_deleted = 0
+    </update>
 
-    <delete id="deleteByTestId" parameterType="java.lang.Long">
-        DELETE FROM listening_question
-        WHERE test_id = #{testId}
-    </delete>
+    <update id="softDeleteByTestId">
+        update listening_question
+        set is_deleted = 1
+        where test_id = #{testId}
+        and is_deleted = 0
+    </update>
 
+    <update id="restoreById">
+        update listening_question
+        set is_deleted = 0
+        where id = #{id}
+        and is_deleted = 1
+    </update>
+
+    <update id="restoreByTestId">
+        update listening_question
+        set is_deleted = 0
+        where test_id = #{testId}
+        and is_deleted = 1
+    </update>
 </mapper>

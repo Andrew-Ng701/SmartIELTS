@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <!DOCTYPE mapper
         PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
-        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.andrew.smartielts.reading.mapper.ReadingQuestionMapper">
 
-    <resultMap id="ReadingQuestionResultMap" type="com.andrew.smartielts.reading.domain.pojo.ReadingQuestion">
+    <resultMap id="BaseMap" type="com.andrew.smartielts.reading.domain.pojo.ReadingQuestion">
         <id column="id" property="id"/>
         <result column="passage_id" property="passageId"/>
         <result column="question_type" property="questionType"/>
@@ -16,59 +16,93 @@
         <result column="group_label" property="groupLabel"/>
         <result column="display_order" property="displayOrder"/>
         <result column="score" property="score"/>
+        <result column="is_deleted" property="isDeleted"/>
     </resultMap>
 
-    <sql id="Base_Column_List">
-        id, passage_id, question_type, answer_mode, question_text, correct_answer,
-        options_json, accepted_answers_json, group_label, display_order, score
-    </sql>
-
-    <insert id="insert" parameterType="com.andrew.smartielts.reading.domain.pojo.ReadingQuestion"
-            useGeneratedKeys="true" keyProperty="id" keyColumn="id">
-        INSERT INTO reading_question (
-        passage_id, question_type, answer_mode, question_text, correct_answer,
-        options_json, accepted_answers_json, group_label, display_order, score
-        )
-        VALUES (
-        #{passageId}, #{questionType}, #{answerMode}, #{questionText}, #{correctAnswer},
-        #{optionsJson}, #{acceptedAnswersJson}, #{groupLabel}, #{displayOrder}, #{score}
-        )
+    <insert id="insertReadingQuestion"
+            parameterType="com.andrew.smartielts.reading.domain.pojo.ReadingQuestion"
+            useGeneratedKeys="true"
+            keyProperty="id">
+        insert into reading_question (
+            passage_id, question_type, answer_mode, question_text,
+            correct_answer, options_json, accepted_answers_json,
+            group_label, display_order, score, is_deleted
+        ) values (
+                     #{passageId}, #{questionType}, #{answerMode}, #{questionText},
+                     #{correctAnswer}, #{optionsJson}, #{acceptedAnswersJson},
+                     #{groupLabel}, #{displayOrder}, #{score}, 0
+                 )
     </insert>
 
-    <select id="findById" parameterType="java.lang.Long" resultMap="ReadingQuestionResultMap">
-        SELECT <include refid="Base_Column_List"/>
-        FROM reading_question
-        WHERE id = #{id}
+    <select id="findActiveById" resultMap="BaseMap">
+        select *
+        from reading_question
+        where id = #{id}
+          and is_deleted = 0
     </select>
 
-    <select id="findByPassageId" parameterType="java.lang.Long" resultMap="ReadingQuestionResultMap">
-        SELECT <include refid="Base_Column_List"/>
-        FROM reading_question
-        WHERE passage_id = #{passageId}
-        ORDER BY display_order ASC, id ASC
+    <select id="findAnyById" resultMap="BaseMap">
+        select *
+        from reading_question
+        where id = #{id}
     </select>
 
-    <update id="update" parameterType="com.andrew.smartielts.reading.domain.pojo.ReadingQuestion">
-        UPDATE reading_question
-        SET
-        question_type = #{questionType},
-        answer_mode = #{answerMode},
-        question_text = #{questionText},
-        correct_answer = #{correctAnswer},
-        options_json = #{optionsJson},
-        accepted_answers_json = #{acceptedAnswersJson},
-        group_label = #{groupLabel},
-        display_order = #{displayOrder},
-        score = #{score}
-        WHERE id = #{id}
+    <select id="findActiveByPassageId" resultMap="BaseMap">
+        select *
+        from reading_question
+        where passage_id = #{passageId}
+          and is_deleted = 0
+        order by display_order asc, id asc
+    </select>
+
+    <select id="findAnyByPassageId" resultMap="BaseMap">
+        select *
+        from reading_question
+        where passage_id = #{passageId}
+        order by display_order asc, id asc
+    </select>
+
+    <update id="updateReadingQuestion"
+            parameterType="com.andrew.smartielts.reading.domain.pojo.ReadingQuestion">
+        update reading_question
+        set question_type = #{questionType},
+            answer_mode = #{answerMode},
+            question_text = #{questionText},
+            correct_answer = #{correctAnswer},
+            options_json = #{optionsJson},
+            accepted_answers_json = #{acceptedAnswersJson},
+            group_label = #{groupLabel},
+            display_order = #{displayOrder},
+            score = #{score}
+        where id = #{id}
     </update>
 
-    <delete id="deleteById" parameterType="java.lang.Long">
-        DELETE FROM reading_question WHERE id = #{id}
-    </delete>
+    <update id="softDeleteById">
+        update reading_question
+        set is_deleted = 1
+        where id = #{id}
+          and is_deleted = 0
+    </update>
 
-    <delete id="deleteByPassageId" parameterType="java.lang.Long">
-        DELETE FROM reading_question WHERE passage_id = #{passageId}
-    </delete>
+    <update id="softDeleteByPassageId">
+        update reading_question
+        set is_deleted = 1
+        where passage_id = #{passageId}
+          and is_deleted = 0
+    </update>
+
+    <update id="restoreById">
+        update reading_question
+        set is_deleted = 0
+        where id = #{id}
+          and is_deleted = 1
+    </update>
+
+    <update id="restoreByPassageId">
+        update reading_question
+        set is_deleted = 0
+        where passage_id = #{passageId}
+          and is_deleted = 1
+    </update>
 
 </mapper>

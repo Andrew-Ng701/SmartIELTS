@@ -2,14 +2,26 @@ package com.andrew.smartielts.writing.mapper;
 
 import com.andrew.smartielts.writing.domain.pojo.WritingQuestion;
 import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Param;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Mapper
 public interface WritingQuestionMapper {
-    void insertWritingQuestion(WritingQuestion question);
-    WritingQuestion findById(Long id);
+
+    void insert(WritingQuestion question);
+
+    void update(WritingQuestion question);
+
     List<WritingQuestion> findAll();
-    void updateWritingQuestion(WritingQuestion question);
-    void deleteById(Long id);
+
+    WritingQuestion findById(@Param("id") Long id);
+
+    WritingQuestion findByIdForAdmin(@Param("id") Long id);
+
+    void logicalDeleteById(@Param("id") Long id,
+                           @Param("deletedTime") LocalDateTime deletedTime);
+
+    void restoreById(@Param("id") Long id);
 }

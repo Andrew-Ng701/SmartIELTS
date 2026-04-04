@@ -11,13 +11,17 @@ public interface SpeakingMapper {
 
     void insertSpeakingQuestion(SpeakingQuestion question);
 
-    SpeakingQuestion findById(Long id);
+    SpeakingQuestion findById(@Param("id") Long id);
+
+    SpeakingQuestion findAnyById(@Param("id") Long id);
 
     List<SpeakingQuestion> findAll();
 
     void updateSpeakingQuestion(SpeakingQuestion question);
 
-    void deleteById(Long id);
+    void softDeleteById(@Param("id") Long id);
+
+    void restoreById(@Param("id") Long id);
 
     List<SpeakingQuestion> findByPart(@Param("part") String part);
 
@@ -28,4 +32,3 @@ public interface SpeakingMapper {
                                                            @Param("topicKey") String topicKey,
                                                            @Param("subType") String subType);
 }
-

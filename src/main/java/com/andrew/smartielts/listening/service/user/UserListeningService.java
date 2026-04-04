@@ -1,7 +1,10 @@
 package com.andrew.smartielts.listening.service.user;
 
+import com.andrew.smartielts.common.page.PageResult;
 import com.andrew.smartielts.listening.domain.dto.ListeningSubmitDTO;
 import com.andrew.smartielts.listening.domain.pojo.ListeningTest;
+import com.andrew.smartielts.listening.domain.query.user.UserListeningDeletedRecordPageQuery;
+import com.andrew.smartielts.listening.domain.query.user.UserListeningRecordPageQuery;
 import com.andrew.smartielts.listening.domain.vo.ListeningRecordDetailVO;
 import com.andrew.smartielts.listening.domain.vo.ListeningRecordVO;
 import com.andrew.smartielts.listening.domain.vo.ListeningTestDetailVO;
@@ -16,7 +19,13 @@ public interface UserListeningService {
 
     ListeningRecordDetailVO submit(Long testId, ListeningSubmitDTO dto);
 
-    List<ListeningRecordVO> myRecords(Long userId);
+    PageResult<ListeningRecordVO> pageActiveRecords(Long userId, UserListeningRecordPageQuery query);
+
+    PageResult<ListeningRecordVO> pageDeletedRecords(Long userId, UserListeningDeletedRecordPageQuery query);
 
     ListeningRecordDetailVO getRecord(Long recordId, Long userId);
+
+    void deleteRecord(Long recordId, Long userId);
+
+    void restoreRecord(Long recordId, Long userId);
 }

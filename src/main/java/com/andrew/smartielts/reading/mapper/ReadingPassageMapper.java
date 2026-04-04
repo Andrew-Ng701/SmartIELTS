@@ -2,21 +2,30 @@ package com.andrew.smartielts.reading.mapper;
 
 import com.andrew.smartielts.reading.domain.pojo.ReadingPassage;
 import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Param;
 
 import java.util.List;
 
 @Mapper
 public interface ReadingPassageMapper {
 
-    void insert(ReadingPassage passage);
+    void insertReadingPassage(ReadingPassage passage);
 
-    ReadingPassage findById(Long id);
+    ReadingPassage findActiveById(@Param("id") Long id);
 
-    List<ReadingPassage> findByTestId(Long testId);
+    ReadingPassage findAnyById(@Param("id") Long id);
 
-    void update(ReadingPassage passage);
+    List<ReadingPassage> findActiveByTestId(@Param("testId") Long testId);
 
-    void deleteById(Long id);
+    List<ReadingPassage> findAnyByTestId(@Param("testId") Long testId);
 
-    void deleteByTestId(Long testId);
+    void updateReadingPassage(ReadingPassage passage);
+
+    void softDeleteById(@Param("id") Long id);
+
+    void softDeleteByTestId(@Param("testId") Long testId);
+
+    void restoreById(@Param("id") Long id);
+
+    void restoreByTestId(@Param("testId") Long testId);
 }

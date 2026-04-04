@@ -1,54 +1,289 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <!DOCTYPE mapper
         PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
-        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
 <mapper namespace="com.andrew.smartielts.listening.mapper.ListeningRecordMapper">
 
-    <resultMap id="ListeningRecordResultMap" type="com.andrew.smartielts.listening.domain.pojo.ListeningRecord">
-        <id column="id" property="id"/>
-        <result column="user_id" property="userId"/>
-        <result column="test_id" property="testId"/>
-        <result column="total_score" property="totalScore"/>
-        <result column="created_time" property="createdTime"/>
+    <resultMap id="ListeningRecordMap" type="com.andrew.smartielts.listening.domain.pojo.ListeningRecord">
+        <id property="id" column="id"/>
+        <result property="userId" column="user_id"/>
+        <result property="testId" column="test_id"/>
+        <result property="totalScore" column="total_score"/>
+        <result property="createdTime" column="created_time"/>
+        <result property="isDeleted" column="is_deleted"/>
     </resultMap>
 
-    <sql id="Base_Column_List">
-        id, user_id, test_id, total_score, created_time
+    <sql id="ListeningRecordColumns">
+        lr.id,
+        lr.user_id,
+        lr.test_id,
+        lr.total_score,
+        lr.created_time,
+        lr.is_deleted
     </sql>
 
+    <sql id="UserActiveWhere">
+        <where>
+            lr.is_deleted = 0
+            AND lr.user_id = #{userId}
+
+            <if test="query.testId != null">
+                AND lr.test_id = #{query.testId}
+            </if>
+            <if test="query.minScore != null">
+                AND lr.total_score <![CDATA[ >= ]]> #{query.minScore}
+            </if>
+            <if test="query.maxScore != null">
+                AND lr.total_score <![CDATA[ <= ]]> #{query.maxScore}
+            </if>
+            <if test="query.startTime != null">
+                AND lr.created_time <![CDATA[ >= ]]> #{query.startTime}
+            </if>
+            <if test="query.endTime != null">
+                AND lr.created_time <![CDATA[ <= ]]> #{query.endTime}
+            </if>
+        </where>
+    </sql>
+
+    <sql id="UserDeletedWhere">
+        <where>
+            lr.is_deleted = 1
+            AND lr.user_id = #{userId}
+        </where>
+    </sql>
+
+    <sql id="AdminActiveWhere">
+        <where>
+            lr.is_deleted = 0
+
+            <if test="query.userId != null">
+                AND lr.user_id = #{query.userId}
+            </if>
+            <if test="query.testId != null">
+                AND lr.test_id = #{query.testId}
+            </if>
+            <if test="query.minScore != null">
+                AND lr.total_score <![CDATA[ >= ]]> #{query.minScore}
+            </if>
+            <if test="query.maxScore != null">
+                AND lr.total_score <![CDATA[ <= ]]> #{query.maxScore}
+            </if>
+            <if test="query.startTime != null">
+                AND lr.created_time <![CDATA[ >= ]]> #{query.startTime}
+            </if>
+            <if test="query.endTime != null">
+                AND lr.created_time <![CDATA[ <= ]]> #{query.endTime}
+            </if>
+        </where>
+    </sql>
+
+    <sql id="AdminDeletedWhere">
+        <where>
+            lr.is_deleted = 1
+        </where>
+    </sql>
+
+    <sql id="UserActiveOrderBy">
+        ORDER BY lr.created_time
+        <choose>
+            <when test="query.sortDirection != null and query.sortDirection.name() == 'ASC'">
+                ASC
+            </when>
+            <otherwise>
+                DESC
+            </otherwise>
+        </choose>
+    </sql>
+
+    <sql id="UserDeletedOrderBy">
+        ORDER BY lr.created_time
+        <choose>
+            <when test="query.sortDirection != null and query.sortDirection.name() == 'ASC'">
+                ASC
+            </when>
+            <otherwise>
+                DESC
+            </otherwise>
+        </choose>
+    </sql>
+
+    <sql id="AdminActiveOrderBy">
+        ORDER BY lr.created_time
+        <choose>
+            <when test="query.sortDirection != null and query.sortDirection.name() == 'ASC'">
+                ASC
+            </when>
+            <otherwise>
+                DESC
+            </otherwise>
+        </choose>
+    </sql>
+
+    <sql id="AdminDeletedOrderBy">
+        ORDER BY lr.created_time
+        <choose>
+            <when test="query.sortDirection != null and query.sortDirection.name() == 'ASC'">
+                ASC
+            </when>
+            <otherwise>
+                DESC
+            </otherwise>
+        </choose>
+    </sql>
+
+    <select id="countUserActive" resultType="java.lang.Long">
+        SELECT COUNT(1)
+        FROM listening_record lr
+        <include refid="UserActiveWhere"/>
+    </select>
+
+    <select id="pageUserActive" resultMap="ListeningRecordMap">
+        SELECT
+        <include refid="ListeningRecordColumns"/>
+        FROM listening_record lr
+        <include refid="UserActiveWhere"/>
+        <include refid="UserActiveOrderBy"/>
+        LIMIT #{offset}, #{limit}
+    </select>
+
+    <select id="countUserDeleted" resultType="java.lang.Long">
+        SELECT COUNT(1)
+        FROM listening_record lr
+        <include refid="UserDeletedWhere"/>
+    </select>
+
+    <select id="pageUserDeleted" resultMap="ListeningRecordMap">
+        SELECT
+        <include refid="ListeningRecordColumns"/>
+        FROM listening_record lr
+        <include refid="UserDeletedWhere"/>
+        <include refid="UserDeletedOrderBy"/>
+        LIMIT #{offset}, #{limit}
+    </select>
+
+    <select id="countAdminActive" resultType="java.lang.Long">
+        SELECT COUNT(1)
+        FROM listening_record lr
+        <include refid="AdminActiveWhere"/>
+    </select>
+
+    <select id="pageAdminActive" resultMap="ListeningRecordMap">
+        SELECT
+        <include refid="ListeningRecordColumns"/>
+        FROM listening_record lr
+        <include refid="AdminActiveWhere"/>
+        <include refid="AdminActiveOrderBy"/>
+        LIMIT #{offset}, #{limit}
+    </select>
+
+    <select id="countAdminDeleted" resultType="java.lang.Long">
+        SELECT COUNT(1)
+        FROM listening_record lr
+        <include refid="AdminDeletedWhere"/>
+    </select>
+
+    <select id="pageAdminDeleted" resultMap="ListeningRecordMap">
+        SELECT
+        <include refid="ListeningRecordColumns"/>
+        FROM listening_record lr
+        <include refid="AdminDeletedWhere"/>
+        <include refid="AdminDeletedOrderBy"/>
+        LIMIT #{offset}, #{limit}
+    </select>
+
+    <select id="findAnyById" resultMap="ListeningRecordMap">
+        SELECT
+        <include refid="ListeningRecordColumns"/>
+        FROM listening_record lr
+        WHERE lr.id = #{id}
+        LIMIT 1
+    </select>
+
+    <select id="findAnyByIdForUser" resultMap="ListeningRecordMap">
+        SELECT
+        <include refid="ListeningRecordColumns"/>
+        FROM listening_record lr
+        WHERE lr.id = #{recordId}
+        AND lr.user_id = #{userId}
+        LIMIT 1
+    </select>
+
     <insert id="insert" parameterType="com.andrew.smartielts.listening.domain.pojo.ListeningRecord"
-            useGeneratedKeys="true" keyProperty="id" keyColumn="id">
+            useGeneratedKeys="true" keyProperty="id">
         INSERT INTO listening_record (
-        user_id, test_id, total_score, created_time
-        )
-        VALUES (
-        #{userId}, #{testId}, #{totalScore}, #{createdTime}
-        )
+            user_id,
+            test_id,
+            total_score,
+            created_time,
+            is_deleted
+        ) VALUES (
+                     #{userId},
+                     #{testId},
+                     #{totalScore},
+                     #{createdTime},
+                     #{isDeleted}
+                 )
     </insert>
-
-    <select id="findById" parameterType="java.lang.Long" resultMap="ListeningRecordResultMap">
-        SELECT <include refid="Base_Column_List"/>
-        FROM listening_record
-        WHERE id = #{id}
-    </select>
-
-    <select id="findByUserId" parameterType="java.lang.Long" resultMap="ListeningRecordResultMap">
-        SELECT <include refid="Base_Column_List"/>
-        FROM listening_record
-        WHERE user_id = #{userId}
-        ORDER BY id DESC
-    </select>
-
-    <select id="findAll" resultMap="ListeningRecordResultMap">
-        SELECT <include refid="Base_Column_List"/>
-        FROM listening_record
-        ORDER BY id DESC
-    </select>
 
     <update id="updateTotalScore">
         UPDATE listening_record
         SET total_score = #{totalScore}
-        WHERE id = #{id}
+        WHERE id = #{recordId}
     </update>
+
+    <update id="softDeleteById">
+        UPDATE listening_record
+        SET is_deleted = 1
+        WHERE id = #{recordId}
+          AND is_deleted = 0
+    </update>
+
+    <update id="restoreById">
+        UPDATE listening_record
+        SET is_deleted = 0
+        WHERE id = #{recordId}
+          AND is_deleted = 1
+    </update>
+
+    <update id="softDeleteByIdForUser">
+        UPDATE listening_record
+        SET is_deleted = 1
+        WHERE id = #{recordId}
+          AND user_id = #{userId}
+          AND is_deleted = 0
+    </update>
+
+    <update id="restoreByIdForUser">
+        UPDATE listening_record
+        SET is_deleted = 0
+        WHERE id = #{recordId}
+          AND user_id = #{userId}
+          AND is_deleted = 1
+    </update>
+
+    <select id="findRecentActiveByUserId"
+            resultType="com.andrew.smartielts.listening.domain.pojo.ListeningRecord">
+        SELECT
+            lr.id,
+            lr.user_id,
+            lr.test_id,
+            lr.total_score,
+            lr.created_time,
+            lr.is_deleted
+        FROM listening_record lr
+        WHERE lr.user_id = #{userId}
+          AND lr.is_deleted = 0
+        ORDER BY lr.created_time DESC, lr.id DESC
+        LIMIT #{limit}
+    </select>
+
+    <select id="selectUserAverageScore" resultType="java.math.BigDecimal">
+        SELECT AVG(total_score)
+        FROM listening_record
+        WHERE user_id = #{userId}
+          AND is_deleted = 0
+          AND total_score IS NOT NULL
+    </select>
 
 </mapper>

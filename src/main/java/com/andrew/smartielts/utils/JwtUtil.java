@@ -10,32 +10,31 @@ import java.util.Map;
 
 public class JwtUtil {
 
-    /**
-     * 生成 Token
-     */
     public static String createToken(Long userId,
                                      String role,
+                                     Long tokenVersion,
                                      String secretKey,
-                                     long ttl) {
+                                     long ttlMillis) {
+        long nowMillis = System.currentTimeMillis();
+        Date now = new Date(nowMillis);
+        Date exp = new Date(nowMillis + ttlMillis);
 
         Map<String, Object> claims = new HashMap<>();
         claims.put("userId", userId);
         claims.put("role", role);
+        claims.put("tokenVersion", tokenVersion);
 
         return Jwts.builder()
                 .setClaims(claims)
-                .setExpiration(new Date(System.currentTimeMillis() + ttl))
-                .signWith(SignatureAlgorithm.HS256, secretKey.getBytes())
+                .setIssuedAt(now)
+                .setExpiration(exp)
+                .signWith(SignatureAlgorithm.HS256, secretKey)
                 .compact();
     }
 
-    /**
-     * 解析 Token
-     */
     public static Claims parseJWT(String secretKey, String token) {
-
         return Jwts.parser()
-                .setSigningKey(secretKey.getBytes())
+                .setSigningKey(secretKey)
                 .parseClaimsJws(token)
                 .getBody();
     }

@@ -9,5 +9,8 @@ public class ReadingAnswerResultVO {
     private String userAnswer;
     private String correctAnswer;
     private Integer isCorrect;
+    private String questionType;
+    private String answerMode;
+    private String optionsJson;
     private Integer score;
 }

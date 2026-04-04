@@ -12,5 +12,7 @@ public class WritingQuestion {
     private String description;
     private String imageUrl;
     private String imageObjectKey;
+    private Integer isDeleted;
+    private LocalDateTime deletedTime;
     private LocalDateTime createdTime;
 }

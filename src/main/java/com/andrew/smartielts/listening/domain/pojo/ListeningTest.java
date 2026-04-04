@@ -12,4 +12,5 @@ public class ListeningTest {
     private Integer totalScore;
     private String audioObjectKey;
     private LocalDateTime createdTime;
+    private Integer isDeleted;
 }

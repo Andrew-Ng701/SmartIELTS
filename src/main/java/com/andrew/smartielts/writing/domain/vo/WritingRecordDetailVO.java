@@ -15,6 +15,10 @@ public class WritingRecordDetailVO {
 
     private String questionTitle;
 
+    private String questionDescription;
+
+    private String questionImageUrl;
+
     private String taskType;
 
     private String inputType;

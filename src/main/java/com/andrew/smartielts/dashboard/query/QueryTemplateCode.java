@@ -1,0 +1,16 @@
+package com.andrew.smartielts.dashboard.query;
+
+public enum QueryTemplateCode {
+
+    ADMIN_COUNT_USERS,
+    ADMIN_MODULE_STATS,
+    ADMIN_AI_FAILURES,
+    ADMIN_USER_RECORDS,
+    ADMIN_RECENT_ISSUES,
+    ADMIN_TOP_ACTIVE_USERS,
+
+    USER_SELF_MODULE_STATS,
+    USER_SELF_RECENT_RECORDS,
+    USER_SELF_PROGRESS,
+    USER_SELF_DELETED_SUMMARY
+}

@@ -9,15 +9,23 @@ import java.util.List;
 @Mapper
 public interface ReadingQuestionMapper {
 
-    void insert(ReadingQuestion question);
+    void insertReadingQuestion(ReadingQuestion question);
 
-    ReadingQuestion findById(Long id);
+    ReadingQuestion findActiveById(@Param("id") Long id);
 
-    List<ReadingQuestion> findByPassageId(@Param("passageId") Long passageId);
+    ReadingQuestion findAnyById(@Param("id") Long id);
 
-    void update(ReadingQuestion question);
+    List<ReadingQuestion> findActiveByPassageId(@Param("passageId") Long passageId);
 
-    void deleteById(Long id);
+    List<ReadingQuestion> findAnyByPassageId(@Param("passageId") Long passageId);
 
-    void deleteByPassageId(@Param("passageId") Long passageId);
+    void updateReadingQuestion(ReadingQuestion question);
+
+    void softDeleteById(@Param("id") Long id);
+
+    void softDeleteByPassageId(@Param("passageId") Long passageId);
+
+    void restoreById(@Param("id") Long id);
+
+    void restoreByPassageId(@Param("passageId") Long passageId);
 }

@@ -1,14 +1,23 @@
 package com.andrew.smartielts.listening.service.admin.impl;
 
+import com.andrew.smartielts.common.constants.RecordQueryValidator;
+import com.andrew.smartielts.common.page.PageResult;
 import com.andrew.smartielts.common.storage.BucketType;
 import com.andrew.smartielts.common.storage.UploadResult;
 import com.andrew.smartielts.common.storage.service.StorageService;
 import com.andrew.smartielts.listening.domain.dto.ListeningCreateTestForm;
 import com.andrew.smartielts.listening.domain.dto.ListeningQuestionDTO;
 import com.andrew.smartielts.listening.domain.dto.ListeningTestDTO;
+import com.andrew.smartielts.listening.domain.pojo.ListeningAnswerRecord;
 import com.andrew.smartielts.listening.domain.pojo.ListeningQuestion;
 import com.andrew.smartielts.listening.domain.pojo.ListeningRecord;
 import com.andrew.smartielts.listening.domain.pojo.ListeningTest;
+import com.andrew.smartielts.listening.domain.query.admin.AdminListeningDeletedRecordPageQuery;
+import com.andrew.smartielts.listening.domain.query.admin.AdminListeningRecordPageQuery;
+import com.andrew.smartielts.listening.domain.vo.ListeningAnswerResultVO;
+import com.andrew.smartielts.listening.domain.vo.ListeningQuestionVO;
+import com.andrew.smartielts.listening.domain.vo.ListeningRecordDetailVO;
+import com.andrew.smartielts.listening.domain.vo.ListeningRecordVO;
 import com.andrew.smartielts.listening.domain.vo.ListeningTestDetailVO;
 import com.andrew.smartielts.listening.mapper.ListeningAnswerRecordMapper;
 import com.andrew.smartielts.listening.mapper.ListeningQuestionMapper;
@@ -20,7 +29,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
 
 @Service
 public class AdminListeningServiceImpl implements AdminListeningService {
@@ -43,10 +55,15 @@ public class AdminListeningServiceImpl implements AdminListeningService {
     @Override
     @Transactional
     public ListeningTest createTest(ListeningCreateTestForm form) {
+        if (form == null) {
+            throw new RuntimeException("Request body is required");
+        }
+
         ListeningTest test = new ListeningTest();
         test.setTitle(form.getTitle());
         test.setTotalScore(form.getTotalScore());
         test.setCreatedTime(LocalDateTime.now());
+        test.setIsDeleted(0);
 
         if (form.getFile() != null && !form.getFile().isEmpty()) {
             UploadResult upload = storageService.upload(
@@ -64,46 +81,44 @@ public class AdminListeningServiceImpl implements AdminListeningService {
 
     @Override
     public List<ListeningTest> listTests() {
-        return listeningTestMapper.findAll();
+        return listeningTestMapper.findAllActive();
     }
 
     @Override
     public ListeningTestDetailVO getTestDetail(Long testId) {
-        ListeningTest test = listeningTestMapper.findById(testId);
+        ListeningTest test = listeningTestMapper.findAnyById(testId);
         if (test == null) {
             throw new RuntimeException("Listening test not found");
         }
 
-        ListeningTestDetailVO vo = new ListeningTestDetailVO();
-        vo.setId(test.getId());
-        vo.setTitle(test.getTitle());
-        vo.setAudioUrl(test.getAudioUrl());
-        vo.setTotalScore(test.getTotalScore());
-        vo.setQuestions(
-                listeningQuestionMapper.findByTestId(testId).stream().map(q -> {
-                    com.andrew.smartielts.listening.domain.vo.ListeningQuestionVO qvo =
-                            new com.andrew.smartielts.listening.domain.vo.ListeningQuestionVO();
-                    qvo.setId(q.getId());
-                    qvo.setSectionNumber(q.getSectionNumber());
-                    qvo.setQuestionNumber(q.getQuestionNumber());
-                    qvo.setQuestionType(q.getQuestionType());
-                    qvo.setAnswerMode(q.getAnswerMode());
-                    qvo.setQuestionText(q.getQuestionText());
-                    qvo.setOptionsJson(q.getOptionsJson());
-                    qvo.setDisplayOrder(q.getDisplayOrder());
-                    qvo.setScore(q.getScore());
-                    return qvo;
-                }).toList()
-        );
-        return vo;
+        List<ListeningQuestion> questions = listeningQuestionMapper.findAnyByTestId(testId);
+        List<ListeningQuestionVO> questionVOList = new ArrayList<>();
+        for (ListeningQuestion question : questions) {
+            questionVOList.add(toQuestionVO(question));
+        }
+
+        questionVOList.sort(Comparator
+                .comparing(ListeningQuestionVO::getDisplayOrder, Comparator.nullsLast(Integer::compareTo))
+                .thenComparing(ListeningQuestionVO::getQuestionNumber, Comparator.nullsLast(Integer::compareTo)));
+
+        ListeningTestDetailVO detailVO = new ListeningTestDetailVO();
+        detailVO.setId(test.getId());
+        detailVO.setTitle(test.getTitle());
+        detailVO.setAudioUrl(test.getAudioUrl());
+        detailVO.setTotalScore(test.getTotalScore());
+        detailVO.setQuestions(questionVOList);
+        return detailVO;
     }
 
     @Override
     @Transactional
     public ListeningTest updateTest(Long id, ListeningTestDTO dto) {
-        ListeningTest test = listeningTestMapper.findById(id);
+        ListeningTest test = listeningTestMapper.findActiveById(id);
         if (test == null) {
             throw new RuntimeException("Listening test not found");
+        }
+        if (dto == null) {
+            throw new RuntimeException("Request body is required");
         }
 
         test.setTitle(dto.getTitle());
@@ -115,31 +130,41 @@ public class AdminListeningServiceImpl implements AdminListeningService {
     @Override
     @Transactional
     public void deleteTest(Long id) {
-        ListeningTest test = listeningTestMapper.findById(id);
+        ListeningTest test = listeningTestMapper.findActiveById(id);
         if (test == null) {
             throw new RuntimeException("Listening test not found");
         }
 
-        if (test.getAudioObjectKey() != null && !test.getAudioObjectKey().isBlank()) {
-            storageService.delete(BucketType.LISTENING_RECORDING, test.getAudioObjectKey());
-        }
-
-        listeningQuestionMapper.deleteByTestId(id);
-        listeningTestMapper.deleteById(id);
+        listeningQuestionMapper.softDeleteByTestId(id);
+        listeningTestMapper.softDeleteById(id);
     }
 
+    @Override
+    @Transactional
+    public void restoreTest(Long id) {
+        ListeningTest test = listeningTestMapper.findAnyById(id);
+        if (test == null) {
+            throw new RuntimeException("Listening test not found");
+        }
+
+        listeningTestMapper.restoreById(id);
+        listeningQuestionMapper.restoreByTestId(id);
+    }
 
     @Override
     @Transactional
     public void createQuestion(Long testId, ListeningQuestionDTO dto) {
-        ListeningTest test = listeningTestMapper.findById(testId);
+        ListeningTest test = listeningTestMapper.findActiveById(testId);
         if (test == null) {
             throw new RuntimeException("Listening test not found");
+        }
+        if (dto == null) {
+            throw new RuntimeException("Request body is required");
         }
 
         ListeningQuestion question = new ListeningQuestion();
         question.setTestId(testId);
-        question.setSectionNumber(dto.getSectionNumber());
+        question.setSectionNumber(dto.getSectionNumber() == null ? 1 : dto.getSectionNumber());
         question.setQuestionNumber(dto.getQuestionNumber());
         question.setQuestionType(dto.getQuestionType());
         question.setAnswerMode(dto.getAnswerMode());
@@ -147,20 +172,25 @@ public class AdminListeningServiceImpl implements AdminListeningService {
         question.setCorrectAnswer(dto.getCorrectAnswer());
         question.setOptionsJson(dto.getOptionsJson());
         question.setAcceptedAnswersJson(dto.getAcceptedAnswersJson());
-        question.setDisplayOrder(dto.getDisplayOrder());
-        question.setScore(dto.getScore());
+        question.setDisplayOrder(dto.getDisplayOrder() == null ? 0 : dto.getDisplayOrder());
+        question.setScore(dto.getScore() == null ? 1 : dto.getScore());
+        question.setIsDeleted(0);
+
         listeningQuestionMapper.insertListeningQuestion(question);
     }
 
     @Override
     @Transactional
     public void updateQuestion(Long questionId, ListeningQuestionDTO dto) {
-        ListeningQuestion question = listeningQuestionMapper.findById(questionId);
+        ListeningQuestion question = listeningQuestionMapper.findActiveById(questionId);
         if (question == null) {
             throw new RuntimeException("Listening question not found");
         }
+        if (dto == null) {
+            throw new RuntimeException("Request body is required");
+        }
 
-        question.setSectionNumber(dto.getSectionNumber());
+        question.setSectionNumber(dto.getSectionNumber() == null ? 1 : dto.getSectionNumber());
         question.setQuestionNumber(dto.getQuestionNumber());
         question.setQuestionType(dto.getQuestionType());
         question.setAnswerMode(dto.getAnswerMode());
@@ -168,23 +198,235 @@ public class AdminListeningServiceImpl implements AdminListeningService {
         question.setCorrectAnswer(dto.getCorrectAnswer());
         question.setOptionsJson(dto.getOptionsJson());
         question.setAcceptedAnswersJson(dto.getAcceptedAnswersJson());
-        question.setDisplayOrder(dto.getDisplayOrder());
-        question.setScore(dto.getScore());
+        question.setDisplayOrder(dto.getDisplayOrder() == null ? 0 : dto.getDisplayOrder());
+        question.setScore(dto.getScore() == null ? 1 : dto.getScore());
+
         listeningQuestionMapper.updateListeningQuestion(question);
     }
 
     @Override
     @Transactional
     public void deleteQuestion(Long questionId) {
-        ListeningQuestion question = listeningQuestionMapper.findById(questionId);
+        ListeningQuestion question = listeningQuestionMapper.findActiveById(questionId);
         if (question == null) {
             throw new RuntimeException("Listening question not found");
         }
-        listeningQuestionMapper.deleteById(questionId);
+
+        listeningQuestionMapper.softDeleteById(questionId);
     }
 
     @Override
-    public List<ListeningRecord> listAllRecords() {
-        return listeningRecordMapper.findAll();
+    @Transactional
+    public void restoreQuestion(Long questionId) {
+        ListeningQuestion question = listeningQuestionMapper.findAnyById(questionId);
+        if (question == null) {
+            throw new RuntimeException("Listening question not found");
+        }
+
+        ListeningTest test = listeningTestMapper.findAnyById(question.getTestId());
+        if (test == null) {
+            throw new RuntimeException("Listening test not found");
+        }
+        if (test.getIsDeleted() != null && test.getIsDeleted() == 1) {
+            throw new RuntimeException("Cannot restore question because parent test is deleted");
+        }
+
+        listeningQuestionMapper.restoreById(questionId);
+    }
+
+    @Override
+    public PageResult<ListeningRecordVO> pageActiveRecords(AdminListeningRecordPageQuery query) {
+        AdminListeningRecordPageQuery safeQuery = query == null ? new AdminListeningRecordPageQuery() : query;
+
+        RecordQueryValidator.validate(
+                safeQuery.getPageNum(),
+                safeQuery.getPageSize(),
+                safeQuery.getUserId(),
+                safeQuery.getTestId(),
+                safeQuery.getMinScore(),
+                safeQuery.getMaxScore(),
+                safeQuery.getStartTime(),
+                safeQuery.getEndTime()
+        );
+
+        int pageNum = normalizePageNum(safeQuery.getPageNum());
+        int pageSize = normalizePageSize(safeQuery.getPageSize());
+        int offset = (pageNum - 1) * pageSize;
+
+        Long total = listeningRecordMapper.countAdminActive(safeQuery);
+        if (total == null || total == 0L) {
+            return new PageResult<>(new ArrayList<>(), 0L, pageNum, pageSize);
+        }
+
+        List<ListeningRecord> records = listeningRecordMapper.pageAdminActive(safeQuery, offset, pageSize);
+        List<ListeningRecordVO> voList = new ArrayList<>();
+
+        if (records != null) {
+            for (ListeningRecord record : records) {
+                voList.add(toRecordVO(record));
+            }
+        }
+
+        return new PageResult<>(voList, total, pageNum, pageSize);
+    }
+
+    @Override
+    public PageResult<ListeningRecordVO> pageDeletedRecords(AdminListeningDeletedRecordPageQuery query) {
+        AdminListeningDeletedRecordPageQuery safeQuery =
+                query == null ? new AdminListeningDeletedRecordPageQuery() : query;
+
+        int pageNum = normalizePageNum(safeQuery.getPageNum());
+        int pageSize = normalizePageSize(safeQuery.getPageSize());
+        int offset = (pageNum - 1) * pageSize;
+
+        Long total = listeningRecordMapper.countAdminDeleted(safeQuery);
+        if (total == null || total == 0L) {
+            return new PageResult<>(new ArrayList<>(), 0L, pageNum, pageSize);
+        }
+
+        List<ListeningRecord> records = listeningRecordMapper.pageAdminDeleted(safeQuery, offset, pageSize);
+        List<ListeningRecordVO> voList = new ArrayList<>();
+
+        if (records != null) {
+            for (ListeningRecord record : records) {
+                voList.add(toRecordVO(record));
+            }
+        }
+
+        return new PageResult<>(voList, total, pageNum, pageSize);
+    }
+
+    @Override
+    public ListeningRecordDetailVO getRecord(Long recordId) {
+        ListeningRecord record = listeningRecordMapper.findAnyById(recordId);
+        if (record == null) {
+            throw new RuntimeException("Listening record not found");
+        }
+
+        ListeningTest test = listeningTestMapper.findAnyById(record.getTestId());
+        if (test == null) {
+            throw new RuntimeException("Listening test not found");
+        }
+
+        List<ListeningQuestion> questions = listeningQuestionMapper.findAnyByTestId(record.getTestId());
+        List<ListeningAnswerRecord> answerRecords = listeningAnswerRecordMapper.findByRecordId(recordId);
+
+        List<ListeningQuestionVO> questionVOList = new ArrayList<>();
+        for (ListeningQuestion question : questions) {
+            questionVOList.add(toQuestionVO(question));
+        }
+
+        questionVOList.sort(Comparator
+                .comparing(ListeningQuestionVO::getDisplayOrder, Comparator.nullsLast(Integer::compareTo))
+                .thenComparing(ListeningQuestionVO::getQuestionNumber, Comparator.nullsLast(Integer::compareTo)));
+
+        List<ListeningAnswerResultVO> answerVOList = new ArrayList<>();
+        for (ListeningQuestion question : questions) {
+            ListeningAnswerRecord matched = answerRecords.stream()
+                    .filter(answer -> Objects.equals(answer.getQuestionId(), question.getId()))
+                    .findFirst()
+                    .orElse(null);
+
+            ListeningAnswerResultVO vo = new ListeningAnswerResultVO();
+            vo.setQuestionId(question.getId());
+            vo.setQuestionNumber(question.getQuestionNumber());
+            vo.setQuestionType(question.getQuestionType());
+            vo.setAnswerMode(question.getAnswerMode());
+            vo.setQuestionText(question.getQuestionText());
+            vo.setOptionsJson(question.getOptionsJson());
+            vo.setCorrectAnswer(question.getCorrectAnswer());
+
+            if (matched != null) {
+                vo.setUserAnswer(matched.getUserAnswer());
+                vo.setIsCorrect(matched.getIsCorrect());
+                vo.setScore(matched.getScore());
+            } else {
+                vo.setUserAnswer(null);
+                vo.setIsCorrect(0);
+                vo.setScore(0);
+            }
+            answerVOList.add(vo);
+        }
+
+        answerVOList.sort(Comparator
+                .comparing(ListeningAnswerResultVO::getQuestionNumber, Comparator.nullsLast(Integer::compareTo)));
+
+        ListeningRecordDetailVO detailVO = new ListeningRecordDetailVO();
+        detailVO.setRecordId(record.getId());
+        detailVO.setTestId(test.getId());
+        detailVO.setTestTitle(test.getTitle());
+        detailVO.setAudioUrl(test.getAudioUrl());
+        detailVO.setTotalScore(record.getTotalScore());
+        detailVO.setCreatedTime(record.getCreatedTime());
+        detailVO.setQuestions(questionVOList);
+        detailVO.setAnswers(answerVOList);
+        return detailVO;
+    }
+
+    @Override
+    @Transactional
+    public void deleteRecord(Long recordId) {
+        ListeningRecord record = listeningRecordMapper.findAnyById(recordId);
+        if (record == null) {
+            throw new RuntimeException("Listening record not found");
+        }
+        if (record.getIsDeleted() != null && record.getIsDeleted() == 1) {
+            throw new RuntimeException("Listening record already deleted");
+        }
+
+        listeningRecordMapper.softDeleteById(recordId);
+    }
+
+    @Override
+    @Transactional
+    public void restoreRecord(Long recordId) {
+        ListeningRecord record = listeningRecordMapper.findAnyById(recordId);
+        if (record == null) {
+            throw new RuntimeException("Listening record not found");
+        }
+        if (record.getIsDeleted() == null || record.getIsDeleted() == 0) {
+            throw new RuntimeException("Listening record is not deleted");
+        }
+
+        listeningRecordMapper.restoreById(recordId);
+    }
+
+    private ListeningQuestionVO toQuestionVO(ListeningQuestion question) {
+        ListeningQuestionVO vo = new ListeningQuestionVO();
+        vo.setId(question.getId());
+        vo.setSectionNumber(question.getSectionNumber());
+        vo.setQuestionNumber(question.getQuestionNumber());
+        vo.setQuestionType(question.getQuestionType());
+        vo.setAnswerMode(question.getAnswerMode());
+        vo.setQuestionText(question.getQuestionText());
+        vo.setOptionsJson(question.getOptionsJson());
+        vo.setDisplayOrder(question.getDisplayOrder());
+        vo.setScore(question.getScore());
+        return vo;
+    }
+
+    private ListeningRecordVO toRecordVO(ListeningRecord record) {
+        ListeningRecordVO vo = new ListeningRecordVO();
+        vo.setId(record.getId());
+        vo.setUserId(record.getUserId());
+        vo.setTestId(record.getTestId());
+        vo.setTotalScore(record.getTotalScore());
+        vo.setCreatedTime(record.getCreatedTime());
+        vo.setIsDeleted(record.getIsDeleted());
+
+        ListeningTest test = listeningTestMapper.findAnyById(record.getTestId());
+        vo.setTestTitle(test == null ? null : test.getTitle());
+        return vo;
+    }
+
+    private int normalizePageNum(Integer pageNum) {
+        return pageNum == null || pageNum < 1 ? 1 : pageNum;
+    }
+
+    private int normalizePageSize(Integer pageSize) {
+        if (pageSize == null || pageSize < 1) {
+            return 10;
+        }
+        return Math.min(pageSize, 100);
     }
 }

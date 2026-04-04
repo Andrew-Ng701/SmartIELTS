@@ -4,7 +4,7 @@
         "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.andrew.smartielts.speaking.mapper.SpeakingMapper">
 
-    <resultMap id="SpeakingQuestionResultMap" type="com.andrew.smartielts.speaking.domain.pojo.SpeakingQuestion">
+    <resultMap id="SpeakingQuestionMap" type="com.andrew.smartielts.speaking.domain.pojo.SpeakingQuestion">
         <id property="id" column="id"/>
         <result property="part" column="part"/>
         <result property="subType" column="sub_type"/>
@@ -16,44 +16,96 @@
         <result property="answerSeconds" column="answer_seconds"/>
         <result property="displayOrder" column="display_order"/>
         <result property="active" column="active"/>
+        <result property="isDeleted" column="is_deleted"/>
+        <result property="deletedTime" column="deleted_time"/>
         <result property="createdTime" column="created_time"/>
     </resultMap>
 
-    <sql id="Base_Column_List">
-        id, part, sub_type, topic_key, question_text, cue_card,
-        follow_up_questions_json, prep_seconds, answer_seconds,
-        display_order, active, created_time
+    <sql id="BaseColumns">
+        id,
+        part,
+        sub_type,
+        topic_key,
+        question_text,
+        cue_card,
+        follow_up_questions_json,
+        prep_seconds,
+        answer_seconds,
+        display_order,
+        active,
+        is_deleted,
+        deleted_time,
+        created_time
     </sql>
 
-    <insert id="insertSpeakingQuestion" parameterType="com.andrew.smartielts.speaking.domain.pojo.SpeakingQuestion"
-            useGeneratedKeys="true" keyProperty="id">
+    <insert id="insertSpeakingQuestion"
+            parameterType="com.andrew.smartielts.speaking.domain.pojo.SpeakingQuestion"
+            useGeneratedKeys="true"
+            keyProperty="id">
         INSERT INTO speaking_question (
-            part, sub_type, topic_key, question_text, cue_card,
-            follow_up_questions_json, prep_seconds, answer_seconds,
-            display_order, active, created_time
+            part,
+            sub_type,
+            topic_key,
+            question_text,
+            cue_card,
+            follow_up_questions_json,
+            prep_seconds,
+            answer_seconds,
+            display_order,
+            active,
+            is_deleted,
+            deleted_time,
+            created_time
         ) VALUES (
-                     #{part}, #{subType}, #{topicKey}, #{questionText}, #{cueCard},
-                     #{followUpQuestionsJson}, #{prepSeconds}, #{answerSeconds},
-                     #{displayOrder}, #{active}, #{createdTime}
+                     #{part},
+                     #{subType},
+                     #{topicKey},
+                     #{questionText},
+                     #{cueCard},
+                     #{followUpQuestionsJson},
+                     #{prepSeconds},
+                     #{answerSeconds},
+                     #{displayOrder},
+                     #{active},
+                     0,
+                     NULL,
+                     NOW()
                  )
     </insert>
 
-    <select id="findById" resultMap="SpeakingQuestionResultMap">
-        SELECT <include refid="Base_Column_List"/>
+    <select id="findById" resultMap="SpeakingQuestionMap">
+        SELECT <include refid="BaseColumns"/>
+        FROM speaking_question
+        WHERE id = #{id}
+        AND is_deleted = 0
+    </select>
+
+    <select id="findAnyById" resultMap="SpeakingQuestionMap">
+        SELECT <include refid="BaseColumns"/>
         FROM speaking_question
         WHERE id = #{id}
     </select>
 
-    <select id="findAll" resultMap="SpeakingQuestionResultMap">
-        SELECT <include refid="Base_Column_List"/>
+    <select id="findAll" resultMap="SpeakingQuestionMap">
+        SELECT <include refid="BaseColumns"/>
         FROM speaking_question
-        ORDER BY part, sub_type, display_order, id
+        WHERE is_deleted = 0
+        ORDER BY
+        CASE part
+        WHEN 'OPENING' THEN 1
+        WHEN 'PART1' THEN 2
+        WHEN 'PART2' THEN 3
+        WHEN 'PART3' THEN 4
+        ELSE 9
+        END,
+        display_order ASC,
+        id ASC
     </select>
 
-    <update id="updateSpeakingQuestion" parameterType="com.andrew.smartielts.speaking.domain.pojo.SpeakingQuestion">
+    <update id="updateSpeakingQuestion"
+            parameterType="com.andrew.smartielts.speaking.domain.pojo.SpeakingQuestion">
         UPDATE speaking_question
-        SET
-            part = #{part},
+        SET part = #{part},
             sub_type = #{subType},
             topic_key = #{topicKey},
             question_text = #{questionText},
@@ -64,37 +116,53 @@
             display_order = #{displayOrder},
             active = #{active}
         WHERE id = #{id}
+          AND is_deleted = 0
     </update>
 
-    <delete id="deleteById">
-        DELETE FROM speaking_question
+    <update id="softDeleteById">
+        UPDATE speaking_question
+        SET is_deleted = 1,
+            deleted_time = NOW()
         WHERE id = #{id}
-    </delete>
+          AND is_deleted = 0
+    </update>
 
-    <select id="findByPart" resultMap="SpeakingQuestionResultMap">
-        SELECT <include refid="Base_Column_List"/>
+    <update id="restoreById">
+        UPDATE speaking_question
+        SET is_deleted = 0,
+            deleted_time = NULL
+        WHERE id = #{id}
+          AND is_deleted = 1
+    </update>
+
+    <select id="findByPart" resultMap="SpeakingQuestionMap">
+        SELECT <include refid="BaseColumns"/>
         FROM speaking_question
-        WHERE part = #{part} AND active = 1
-        ORDER BY display_order, id
+        WHERE part = #{part}
+        AND is_deleted = 0
+        AND active = 1
+        ORDER BY display_order ASC, id ASC
     </select>
 
-    <select id="findByPartAndSubType" resultMap="SpeakingQuestionResultMap">
-        SELECT <include refid="Base_Column_List"/>
+    <select id="findByPartAndSubType" resultMap="SpeakingQuestionMap">
+        SELECT <include refid="BaseColumns"/>
         FROM speaking_question
         WHERE part = #{part}
         AND sub_type = #{subType}
+        AND is_deleted = 0
         AND active = 1
-        ORDER BY display_order, id
+        ORDER BY display_order ASC, id ASC
     </select>
 
-    <select id="findByPartAndTopicKeyAndSubType" resultMap="SpeakingQuestionResultMap">
-        SELECT <include refid="Base_Column_List"/>
+    <select id="findByPartAndTopicKeyAndSubType" resultMap="SpeakingQuestionMap">
+        SELECT <include refid="BaseColumns"/>
         FROM speaking_question
         WHERE part = #{part}
         AND topic_key = #{topicKey}
         AND sub_type = #{subType}
+        AND is_deleted = 0
         AND active = 1
-        ORDER BY display_order, id
+        ORDER BY display_order ASC, id ASC
     </select>
 
 </mapper>

@@ -4,7 +4,6 @@ import lombok.Data;
 
 @Data
 public class ListeningQuestion {
-
     private Long id;
     private Long testId;
     private Integer sectionNumber;
@@ -17,4 +16,5 @@ public class ListeningQuestion {
     private String acceptedAnswersJson;
     private Integer displayOrder;
     private Integer score;
+    private Integer isDeleted;
 }

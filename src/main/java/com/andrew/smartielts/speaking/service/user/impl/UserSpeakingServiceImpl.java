@@ -1,7 +1,11 @@
 package com.andrew.smartielts.speaking.service.user.impl;
 
+import com.andrew.smartielts.common.page.PageResult;
+import com.andrew.smartielts.speaking.ai.SpeakingScoreAiProperties;
 import com.andrew.smartielts.speaking.ai.dto.SpeakingEvaluationResult;
-import com.andrew.smartielts.speaking.ai.service.*;
+import com.andrew.smartielts.speaking.ai.dto.SpeakingFinalEvaluationResult;
+import com.andrew.smartielts.speaking.ai.service.SpeakingFinalEvaluationService;
+import com.andrew.smartielts.speaking.ai.service.SpeakingScoreAiService;
 import com.andrew.smartielts.speaking.aliyun.AliyunBailianAsrClient;
 import com.andrew.smartielts.speaking.did.service.DidSpeakingService;
 import com.andrew.smartielts.speaking.domain.dto.NextQuestionRequestDTO;
@@ -10,7 +14,14 @@ import com.andrew.smartielts.speaking.domain.model.ExamStep;
 import com.andrew.smartielts.speaking.domain.pojo.SpeakingQuestion;
 import com.andrew.smartielts.speaking.domain.pojo.SpeakingRecord;
 import com.andrew.smartielts.speaking.domain.pojo.SpeakingSession;
-import com.andrew.smartielts.speaking.domain.vo.*;
+import com.andrew.smartielts.speaking.domain.query.user.UserSpeakingDeletedRecordPageQuery;
+import com.andrew.smartielts.speaking.domain.query.user.UserSpeakingRecordPageQuery;
+import com.andrew.smartielts.speaking.domain.vo.NextQuestionVO;
+import com.andrew.smartielts.speaking.domain.vo.SpeakingRecordDetailVO;
+import com.andrew.smartielts.speaking.domain.vo.SpeakingRecordVO;
+import com.andrew.smartielts.speaking.domain.vo.SpeakingSessionSummaryVO;
+import com.andrew.smartielts.speaking.domain.vo.StartExamVO;
+import com.andrew.smartielts.speaking.domain.vo.SubmitAnswerVO;
 import com.andrew.smartielts.speaking.mapper.SpeakingMapper;
 import com.andrew.smartielts.speaking.mapper.SpeakingRecordMapper;
 import com.andrew.smartielts.speaking.mapper.SpeakingSessionMapper;
@@ -24,35 +35,32 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
-import com.andrew.smartielts.speaking.ai.dto.SpeakingFinalEvaluationResult;
-import com.andrew.smartielts.speaking.domain.vo.UploadSpeakingAudioVO;
-
-
-import java.math.RoundingMode;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Objects;
-
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 
 @Service
 @Slf4j
 public class UserSpeakingServiceImpl implements UserSpeakingService {
 
     private static final String EXAM_TYPE_FULL = "FULL";
+
     private static final String SESSION_PENDING = "PENDING";
     private static final String SESSION_STARTED = "STARTED";
-    private static final String SESSION_IN_PROGRESS = "IN_PROGRESS";
-    private static final String SESSION_WAITING_FINAL_EVALUATION = "WAITING_FINAL_EVALUATION";
+    private static final String SESSION_IN_PROGRESS = "INPROGRESS";
+    private static final String SESSION_WAITING_FINAL_EVALUATION = "WAITINGFINALEVALUATION";
     private static final String SESSION_COMPLETED = "COMPLETED";
 
     private static final String RECORD_RECEIVED = "RECEIVED";
     private static final String RECORD_SCORED = "SCORED";
     private static final String RECORD_FAILED = "FAILED";
+
     private static final String STEP_PART2 = "PART2";
 
     private final SpeakingMapper speakingMapper;
@@ -64,21 +72,21 @@ public class UserSpeakingServiceImpl implements UserSpeakingService {
     private final SpeakingAudioStorageService speakingAudioStorageService;
     private final AliyunBailianAsrClient aliyunBailianAsrClient;
     private final SpeakingScoreAiService speakingScoreAiService;
-    private final ObjectMapper objectMapper = new ObjectMapper();
     private final SpeakingFinalEvaluationService speakingFinalEvaluationService;
+    private final SpeakingScoreAiProperties speakingScoreAiProperties;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
-    public UserSpeakingServiceImpl(
-            SpeakingMapper speakingMapper,
-            SpeakingRecordMapper speakingRecordMapper,
-            SpeakingSessionMapper speakingSessionMapper,
-            DidSpeakingService didSpeakingService,
-            SpeakingExamPlanner speakingExamPlanner,
-            SpeakingScriptBuilder speakingScriptBuilder,
-            SpeakingAudioStorageService speakingAudioStorageService,
-            AliyunBailianAsrClient aliyunBailianAsrClient,
-            SpeakingScoreAiService speakingScoreAiService,
-            SpeakingFinalEvaluationService speakingFinalEvaluationService
-    ) {
+    public UserSpeakingServiceImpl(SpeakingMapper speakingMapper,
+                                   SpeakingRecordMapper speakingRecordMapper,
+                                   SpeakingSessionMapper speakingSessionMapper,
+                                   DidSpeakingService didSpeakingService,
+                                   SpeakingExamPlanner speakingExamPlanner,
+                                   SpeakingScriptBuilder speakingScriptBuilder,
+                                   SpeakingAudioStorageService speakingAudioStorageService,
+                                   AliyunBailianAsrClient aliyunBailianAsrClient,
+                                   SpeakingScoreAiService speakingScoreAiService,
+                                   SpeakingFinalEvaluationService speakingFinalEvaluationService,
+                                   SpeakingScoreAiProperties speakingScoreAiProperties) {
         this.speakingMapper = speakingMapper;
         this.speakingRecordMapper = speakingRecordMapper;
         this.speakingSessionMapper = speakingSessionMapper;
@@ -89,6 +97,7 @@ public class UserSpeakingServiceImpl implements UserSpeakingService {
         this.aliyunBailianAsrClient = aliyunBailianAsrClient;
         this.speakingScoreAiService = speakingScoreAiService;
         this.speakingFinalEvaluationService = speakingFinalEvaluationService;
+        this.speakingScoreAiProperties = speakingScoreAiProperties;
     }
 
     @Override
@@ -109,6 +118,7 @@ public class UserSpeakingServiceImpl implements UserSpeakingService {
     @Transactional
     public StartExamVO startExam(StartExamRequestDTO dto) {
         Long userId = SecurityUtils.getCurrentUserId();
+
         List<ExamStep> plan = speakingExamPlanner.buildFullExamPlan();
         LocalDateTime now = LocalDateTime.now();
 
@@ -135,7 +145,6 @@ public class UserSpeakingServiceImpl implements UserSpeakingService {
         session.setUpdatedTime(now);
 
         speakingSessionMapper.insertSpeakingSession(session);
-
         if (session.getId() == null) {
             throw new RuntimeException("Failed to generate speaking session id");
         }
@@ -221,9 +230,10 @@ public class UserSpeakingServiceImpl implements UserSpeakingService {
     @Override
     @Transactional
     public SubmitAnswerVO submitAnswer(String sessionId, Long questionId, MultipartFile file) {
-        log.info("[SubmitAnswer] start, sessionId={}, questionId={}, fileName={}, size={}",
-                sessionId, questionId,
-                file != null ? file.getOriginalFilename() : "null",
+        log.info("SubmitAnswer start, sessionId={}, questionId={}, fileName={}, size={}",
+                sessionId,
+                questionId,
+                file != null ? file.getOriginalFilename() : null,
                 file != null ? file.getSize() : -1);
 
         if (sessionId == null || sessionId.isBlank()) {
@@ -236,17 +246,16 @@ public class UserSpeakingServiceImpl implements UserSpeakingService {
             throw new RuntimeException("mp3 file is required");
         }
 
-        // 1. 驗證 session 與使用者
         SpeakingSession session = speakingSessionMapper.findBySessionId(sessionId);
         if (session == null) {
             throw new RuntimeException("Speaking session not found");
         }
+
         Long currentUserId = SecurityUtils.getCurrentUserId();
         if (!currentUserId.equals(session.getUserId())) {
             throw new RuntimeException("No permission to submit this speaking answer");
         }
 
-        // 2. 驗證題目與 exam plan
         SpeakingQuestion question = speakingMapper.findById(questionId);
         if (question == null) {
             throw new RuntimeException("Speaking question not found");
@@ -258,9 +267,8 @@ public class UserSpeakingServiceImpl implements UserSpeakingService {
             throw new RuntimeException("Question does not belong to this speaking session");
         }
 
-        // 3. 查詢或建立 SpeakingRecord
         SpeakingRecord record = speakingRecordMapper.findBySessionIdAndQuestionId(sessionId, questionId);
-        boolean firstSubmission = (record == null);
+        boolean firstSubmission = record == null;
         LocalDateTime now = LocalDateTime.now();
 
         if (record == null) {
@@ -268,54 +276,37 @@ public class UserSpeakingServiceImpl implements UserSpeakingService {
             record.setUserId(session.getUserId());
             record.setSessionId(sessionId);
             record.setQuestionId(questionId);
+            record.setAnswerStatus(RECORD_RECEIVED);
+            record.setIsDeleted(0);
             record.setCreatedTime(now);
-            log.info("[SubmitAnswer] create new record, sessionId={}, questionId={}", sessionId, questionId);
+            record.setUpdatedTime(now);
         } else {
-            log.info("[SubmitAnswer] reuse existing record, sessionId={}, questionId={}, recordId={}",
-                    sessionId, questionId, record.getId());
+            record.setUpdatedTime(now);
+            record.setAnswerStatus(RECORD_RECEIVED);
+            record.setDeletedTime(null);
+            record.setIsDeleted(0);
         }
 
-        record.setAnswerStatus(RECORD_RECEIVED);
-        record.setUpdatedTime(now);
-
         try {
-            // 4. 上傳音頻到 OSS
-            UploadSpeakingAudioVO uploadVo = speakingAudioStorageService.uploadAudio(
-                    file,
-                    currentUserId,
-                    sessionId,
-                    questionId
-            );
-            record.setAudioUrl(uploadVo.getAudioUrl());
-            log.info("[SubmitAnswer] audio uploaded, sessionId={}, questionId={}, audioUrl={}, size={}",
-                    sessionId, questionId, record.getAudioUrl(), uploadVo.getSize());
+            String audioUrl = speakingAudioStorageService
+                    .uploadAudio(file, currentUserId, sessionId, questionId)
+                    .getAudioUrl();
+            record.setAudioUrl(audioUrl);
 
-            // 5. 語音轉文字（ASR），保留 script
-            String transcript = aliyunBailianAsrClient.transcribe(uploadVo.getAudioUrl());
-            if (transcript == null || transcript.isBlank()) {
-                log.warn("[SubmitAnswer] ASR transcript is empty, sessionId={}, questionId={}",
-                        sessionId, questionId);
-                throw new RuntimeException("ASR transcript is empty");
-            }
+            String transcript = aliyunBailianAsrClient.transcribe(audioUrl);
             record.setTranscript(transcript);
-            log.info("[SubmitAnswer] ASR done, sessionId={}, questionId={}, transcriptLength={}",
-                    sessionId, questionId, transcript.length());
 
-            // 6. 用 Qwen3-Omni-Flash 做單題四項評分 + 短 feedback（audio + text）
-            SpeakingEvaluationResult evaluation =
-                    speakingScoreAiService.evaluate(
-                            question.getPart(),
-                            question.getQuestionText(),
-                            question.getCueCard(),
-                            transcript,
-                            record.getAudioUrl()
-                            // 這裡如果你改成 audio+text 的 service，
-                            // 可以在 service 裡自行讀 audioUrl → dataUri，不必多傳一個參數
-                    );
+            SpeakingEvaluationResult evaluation = speakingScoreAiService.evaluate(
+                    question.getPart(),
+                    question.getQuestionText(),
+                    question.getCueCard(),
+                    transcript,
+                    audioUrl
+            );
 
-            log.info("[SubmitAnswer] Omni score, sessionId={}, questionId={}, "
-                            + "F&C={}, LR={}, GRA={}, Pron={}, Overall={}, feedbackLen={}, rawLen={}",
-                    sessionId, questionId,
+            log.info("SubmitAnswer Omni score, sessionId={}, questionId={}, FC={}, LR={}, GRA={}, Pron={}, Overall={}, feedbackLen={}, rawLen={}",
+                    sessionId,
+                    questionId,
                     evaluation.getFluencyAndCoherence(),
                     evaluation.getLexicalResource(),
                     evaluation.getGrammaticalRangeAndAccuracy(),
@@ -332,39 +323,49 @@ public class UserSpeakingServiceImpl implements UserSpeakingService {
             record.setQualityComment(evaluation.getQualityComment());
             record.setOverallScore(normalizeScore(evaluation.getOverallScore()));
             record.setFeedback(evaluation.getFeedback());
+
+            record.setAiStatus(RECORD_SCORED);
+            record.setAiProvider("aliyun");
+            record.setAiModel(speakingScoreAiProperties.getPerQuestionModelOrDefault());
+            record.setAiErrorMessage(null);
+
             record.setAnswerStatus(RECORD_SCORED);
             record.setUpdatedTime(LocalDateTime.now());
 
-            // 7. 寫入或更新 SpeakingRecord
             if (record.getId() == null) {
                 speakingRecordMapper.insertSpeakingRecord(record);
-                log.info("[SubmitAnswer] record persisted, sessionId={}, questionId={}, recordId={}, mode=INSERT",
+                log.info("SubmitAnswer record persisted, sessionId={}, questionId={}, recordId={}, mode=INSERT",
                         sessionId, questionId, record.getId());
             } else {
                 speakingRecordMapper.updateSpeakingRecord(record);
-                log.info("[SubmitAnswer] record persisted, sessionId={}, questionId={}, recordId={}, mode=UPDATE",
+                log.info("SubmitAnswer record persisted, sessionId={}, questionId={}, recordId={}, mode=UPDATE",
                         sessionId, questionId, record.getId());
             }
 
         } catch (Exception e) {
-            log.error("[SubmitAnswer] failed, sessionId={}, questionId={}, msg={}",
+            log.error("SubmitAnswer failed, sessionId={}, questionId={}, msg={}",
                     sessionId, questionId, e.getMessage(), e);
+
             record.setAnswerStatus(RECORD_FAILED);
+            record.setAiStatus(RECORD_FAILED);
+            record.setAiProvider("aliyun");
+            record.setAiModel(speakingScoreAiProperties.getPerQuestionModelOrDefault());
+            record.setAiErrorMessage(e.getMessage());
             record.setUpdatedTime(LocalDateTime.now());
 
             if (record.getId() == null) {
                 speakingRecordMapper.insertSpeakingRecord(record);
-                log.info("[SubmitAnswer] record persisted on failure, sessionId={}, questionId={}, recordId={}, mode=INSERT",
+                log.info("SubmitAnswer record persisted on failure, sessionId={}, questionId={}, recordId={}, mode=INSERT",
                         sessionId, questionId, record.getId());
             } else {
                 speakingRecordMapper.updateSpeakingRecord(record);
-                log.info("[SubmitAnswer] record persisted on failure, sessionId={}, questionId={}, recordId={}, mode=UPDATE",
+                log.info("SubmitAnswer record persisted on failure, sessionId={}, questionId={}, recordId={}, mode=UPDATE",
                         sessionId, questionId, record.getId());
             }
+
             throw new RuntimeException("Failed to process speaking audio: " + e.getMessage(), e);
         }
 
-        // 8. 更新 session 狀態與 currentIndex
         if (firstSubmission && session.getCurrentIndex() < session.getTotalQuestions()) {
             session.setCurrentIndex(session.getCurrentIndex() + 1);
         }
@@ -377,15 +378,14 @@ public class UserSpeakingServiceImpl implements UserSpeakingService {
 
         session.setUpdatedTime(now);
         speakingSessionMapper.updateSpeakingSession(session);
-        log.info("[SubmitAnswer] session updated, sessionId={}, currentIndex={}, examStatus={}",
+        log.info("SubmitAnswer session updated, sessionId={}, currentIndex={}, examStatus={}",
                 sessionId, session.getCurrentIndex(), session.getExamStatus());
 
         if (session.getCurrentIndex() >= session.getTotalQuestions()) {
-            log.info("[SubmitAnswer] trigger finalizeSessionEvaluation, sessionId={}", sessionId);
+            log.info("SubmitAnswer trigger finalizeSessionEvaluation, sessionId={}", sessionId);
             finalizeSessionEvaluation(sessionId);
         }
 
-        // 9. 構建返回 VO
         SubmitAnswerVO vo = new SubmitAnswerVO();
         vo.setSessionId(sessionId);
         vo.setQuestionId(questionId);
@@ -402,66 +402,90 @@ public class UserSpeakingServiceImpl implements UserSpeakingService {
                 ? "Audio submitted and scored successfully"
                 : "Audio resubmitted and record updated successfully");
 
-        log.info("[SubmitAnswer] success, sessionId={}, questionId={}, status={}",
+        log.info("SubmitAnswer success, sessionId={}, questionId={}, status={}",
                 sessionId, questionId, vo.getStatus());
-
         return vo;
     }
 
     @Override
-    public List<SpeakingRecordVO> myRecords(Long userId) {
-        List<SpeakingRecord> records = speakingRecordMapper.findByUserId(userId);
-        List<SpeakingRecordVO> result = new ArrayList<>();
+    public PageResult<SpeakingRecordVO> pageActiveRecords(Long userId, UserSpeakingRecordPageQuery query) {
+        UserSpeakingRecordPageQuery safeQuery = query == null ? new UserSpeakingRecordPageQuery() : query;
 
-        for (SpeakingRecord record : records) {
-            SpeakingQuestion question = speakingMapper.findById(record.getQuestionId());
+        int pageNum = normalizePageNum(safeQuery.getPageNum());
+        int pageSize = normalizePageSize(safeQuery.getPageSize());
+        int offset = (pageNum - 1) * pageSize;
 
-            SpeakingRecordVO vo = new SpeakingRecordVO();
-            vo.setId(record.getId());
-            vo.setQuestionId(record.getQuestionId());
-            vo.setPart(question != null ? question.getPart() : null);
-            vo.setFluencyAndCoherence(record.getFluencyAndCoherence());
-            vo.setLexicalResource(record.getLexicalResource());
-            vo.setGrammaticalRangeAndAccuracy(record.getGrammaticalRangeAndAccuracy());
-            vo.setPronunciation(record.getPronunciation());
-            vo.setOverallScore(record.getOverallScore());
-            vo.setFeedback(record.getFeedback());
-            vo.setAnswerStatus(record.getAnswerStatus());
-            vo.setCreatedTime(record.getCreatedTime());
-            result.add(vo);
+        Long total = speakingRecordMapper.countUserActive(userId, safeQuery);
+        if (total == null || total == 0L) {
+            return new PageResult<>(new ArrayList<>(), 0L, pageNum, pageSize);
         }
 
-        return result;
+        List<SpeakingRecordVO> voList = speakingRecordMapper.pageUserActive(userId, safeQuery, offset, pageSize);
+        if (voList == null) {
+            voList = new ArrayList<>();
+        }
+
+        return new PageResult<>(voList, total, pageNum, pageSize);
+    }
+
+    @Override
+    public PageResult<SpeakingRecordVO> pageDeletedRecords(Long userId, UserSpeakingDeletedRecordPageQuery query) {
+        UserSpeakingDeletedRecordPageQuery safeQuery =
+                query == null ? new UserSpeakingDeletedRecordPageQuery() : query;
+
+        int pageNum = normalizePageNum(safeQuery.getPageNum());
+        int pageSize = normalizePageSize(safeQuery.getPageSize());
+        int offset = (pageNum - 1) * pageSize;
+
+        Long total = speakingRecordMapper.countUserDeleted(userId, safeQuery);
+        if (total == null || total == 0L) {
+            return new PageResult<>(new ArrayList<>(), 0L, pageNum, pageSize);
+        }
+
+        List<SpeakingRecordVO> voList = speakingRecordMapper.pageUserDeleted(userId, safeQuery, offset, pageSize);
+        if (voList == null) {
+            voList = new ArrayList<>();
+        }
+
+        return new PageResult<>(voList, total, pageNum, pageSize);
     }
 
     @Override
     public SpeakingRecordDetailVO getRecord(Long recordId, Long userId) {
-        SpeakingRecord record = speakingRecordMapper.findById(recordId);
+        SpeakingRecord record = speakingRecordMapper.findAnyByIdForUser(recordId, userId);
         if (record == null) {
             throw new RuntimeException("Speaking record not found");
         }
         if (!userId.equals(record.getUserId())) {
             throw new RuntimeException("No permission to access this record");
         }
+        return toRecordDetailVO(record);
+    }
 
-        SpeakingQuestion question = speakingMapper.findById(record.getQuestionId());
+    @Override
+    @Transactional
+    public void deleteRecord(Long recordId, Long userId) {
+        SpeakingRecord record = speakingRecordMapper.findAnyByIdForUser(recordId, userId);
+        if (record == null) {
+            throw new RuntimeException("Speaking record not found");
+        }
+        if (!userId.equals(record.getUserId())) {
+            throw new RuntimeException("No permission to delete this speaking record");
+        }
+        speakingRecordMapper.softDeleteByIdForUser(recordId, userId);
+    }
 
-        SpeakingRecordDetailVO vo = new SpeakingRecordDetailVO();
-        vo.setRecordId(record.getId());
-        vo.setQuestionId(record.getQuestionId());
-        vo.setPart(question != null ? question.getPart() : null);
-        vo.setQuestionText(question != null ? question.getQuestionText() : null);
-        vo.setAudioUrl(record.getAudioUrl());
-        vo.setTranscript(record.getTranscript());
-        vo.setFluencyAndCoherence(record.getFluencyAndCoherence());
-        vo.setLexicalResource(record.getLexicalResource());
-        vo.setGrammaticalRangeAndAccuracy(record.getGrammaticalRangeAndAccuracy());
-        vo.setPronunciation(record.getPronunciation());
-        vo.setOverallScore(record.getOverallScore());
-        vo.setFeedback(record.getFeedback());
-        vo.setAnswerStatus(record.getAnswerStatus());
-        vo.setCreatedTime(record.getCreatedTime());
-        return vo;
+    @Override
+    @Transactional
+    public void restoreRecord(Long recordId, Long userId) {
+        SpeakingRecord record = speakingRecordMapper.findAnyByIdForUser(recordId, userId);
+        if (record == null) {
+            throw new RuntimeException("Speaking record not found");
+        }
+        if (!userId.equals(record.getUserId())) {
+            throw new RuntimeException("No permission to restore this speaking record");
+        }
+        speakingRecordMapper.restoreByIdForUser(recordId, userId);
     }
 
     @Override
@@ -483,12 +507,16 @@ public class UserSpeakingServiceImpl implements UserSpeakingService {
 
         if (records != null) {
             for (SpeakingRecord record : records) {
-                SpeakingQuestion question = speakingMapper.findById(record.getQuestionId());
+                SpeakingQuestion question = record.getQuestionId() == null
+                        ? null
+                        : findQuestionIncludingDeleted(record.getQuestionId());
 
                 SpeakingRecordVO vo = new SpeakingRecordVO();
                 vo.setId(record.getId());
                 vo.setQuestionId(record.getQuestionId());
+                vo.setSessionId(record.getSessionId());
                 vo.setPart(question != null ? question.getPart() : null);
+                vo.setQuestionText(question != null ? question.getQuestionText() : null);
                 vo.setFluencyAndCoherence(record.getFluencyAndCoherence());
                 vo.setLexicalResource(record.getLexicalResource());
                 vo.setGrammaticalRangeAndAccuracy(record.getGrammaticalRangeAndAccuracy());
@@ -496,6 +524,12 @@ public class UserSpeakingServiceImpl implements UserSpeakingService {
                 vo.setOverallScore(record.getOverallScore());
                 vo.setFeedback(record.getFeedback());
                 vo.setAnswerStatus(record.getAnswerStatus());
+                vo.setIsDeleted(record.getIsDeleted());
+                vo.setDeletedTime(record.getDeletedTime());
+                vo.setAiStatus(record.getAiStatus());
+                vo.setAiProvider(record.getAiProvider());
+                vo.setAiModel(record.getAiModel());
+                vo.setAiErrorMessage(record.getAiErrorMessage());
                 vo.setCreatedTime(record.getCreatedTime());
                 recordVos.add(vo);
             }
@@ -542,30 +576,23 @@ public class UserSpeakingServiceImpl implements UserSpeakingService {
         }
 
         BigDecimal aggregatedFluency = averageScore(
-                scoredRecords.stream().map(SpeakingRecord::getFluencyAndCoherence).toList()
-        );
+                scoredRecords.stream().map(SpeakingRecord::getFluencyAndCoherence).toList());
         BigDecimal aggregatedLexical = averageScore(
-                scoredRecords.stream().map(SpeakingRecord::getLexicalResource).toList()
-        );
+                scoredRecords.stream().map(SpeakingRecord::getLexicalResource).toList());
         BigDecimal aggregatedGrammar = averageScore(
-                scoredRecords.stream().map(SpeakingRecord::getGrammaticalRangeAndAccuracy).toList()
-        );
+                scoredRecords.stream().map(SpeakingRecord::getGrammaticalRangeAndAccuracy).toList());
         BigDecimal aggregatedPronunciation = averageScore(
-                scoredRecords.stream().map(SpeakingRecord::getPronunciation).toList()
-        );
-
-        BigDecimal aggregatedOverall = averageScore(List.of(
-                aggregatedFluency,
-                aggregatedLexical,
-                aggregatedGrammar,
-                aggregatedPronunciation
-        ));
+                scoredRecords.stream().map(SpeakingRecord::getPronunciation).toList());
+        BigDecimal aggregatedOverall = averageScore(
+                List.of(aggregatedFluency, aggregatedLexical, aggregatedGrammar, aggregatedPronunciation));
 
         Map<Long, SpeakingQuestion> questionMap = new HashMap<>();
         for (SpeakingRecord record : scoredRecords) {
-            SpeakingQuestion question = speakingMapper.findById(record.getQuestionId());
-            if (question != null) {
-                questionMap.put(question.getId(), question);
+            if (record.getQuestionId() != null) {
+                SpeakingQuestion question = findQuestionIncludingDeleted(record.getQuestionId());
+                if (question != null) {
+                    questionMap.put(record.getQuestionId(), question);
+                }
             }
         }
 
@@ -592,21 +619,11 @@ public class UserSpeakingServiceImpl implements UserSpeakingService {
             finalResult.setFeedback(buildFallbackFinalFeedback(scoredRecords, questionMap));
         }
 
-        session.setFluencyAndCoherence(normalizeScore(
-                firstNonNull(finalResult.getFluencyAndCoherence(), aggregatedFluency)
-        ));
-        session.setLexicalResource(normalizeScore(
-                firstNonNull(finalResult.getLexicalResource(), aggregatedLexical)
-        ));
-        session.setGrammaticalRangeAndAccuracy(normalizeScore(
-                firstNonNull(finalResult.getGrammaticalRangeAndAccuracy(), aggregatedGrammar)
-        ));
-        session.setPronunciation(normalizeScore(
-                firstNonNull(finalResult.getPronunciation(), aggregatedPronunciation)
-        ));
-        session.setOverallScore(normalizeScore(
-                firstNonNull(finalResult.getOverallScore(), aggregatedOverall)
-        ));
+        session.setFluencyAndCoherence(normalizeScore(firstNonNull(finalResult.getFluencyAndCoherence(), aggregatedFluency)));
+        session.setLexicalResource(normalizeScore(firstNonNull(finalResult.getLexicalResource(), aggregatedLexical)));
+        session.setGrammaticalRangeAndAccuracy(normalizeScore(firstNonNull(finalResult.getGrammaticalRangeAndAccuracy(), aggregatedGrammar)));
+        session.setPronunciation(normalizeScore(firstNonNull(finalResult.getPronunciation(), aggregatedPronunciation)));
+        session.setOverallScore(normalizeScore(firstNonNull(finalResult.getOverallScore(), aggregatedOverall)));
         session.setFinalFeedback(firstNonBlank(
                 finalResult.getFeedback(),
                 buildFallbackFinalFeedback(scoredRecords, questionMap)
@@ -618,8 +635,80 @@ public class UserSpeakingServiceImpl implements UserSpeakingService {
         speakingSessionMapper.updateSpeakingSession(session);
     }
 
-    private SpeakingRecord findRecordBySessionAndQuestion(String sessionId, Long questionId) {
-        return speakingRecordMapper.findBySessionIdAndQuestionId(sessionId, questionId);
+    private SpeakingRecordVO toRecordVO(SpeakingRecord record) {
+        SpeakingRecordVO vo = new SpeakingRecordVO();
+        vo.setId(record.getId());
+        vo.setQuestionId(record.getQuestionId());
+        vo.setSessionId(record.getSessionId());
+
+        SpeakingQuestion question = record.getQuestionId() == null
+                ? null
+                : findQuestionIncludingDeleted(record.getQuestionId());
+
+        vo.setPart(question != null ? question.getPart() : null);
+        vo.setQuestionText(question != null ? question.getQuestionText() : null);
+        vo.setFluencyAndCoherence(record.getFluencyAndCoherence());
+        vo.setLexicalResource(record.getLexicalResource());
+        vo.setGrammaticalRangeAndAccuracy(record.getGrammaticalRangeAndAccuracy());
+        vo.setPronunciation(record.getPronunciation());
+        vo.setOverallScore(record.getOverallScore());
+        vo.setFeedback(record.getFeedback());
+        vo.setAnswerStatus(record.getAnswerStatus());
+        vo.setIsDeleted(record.getIsDeleted());
+        vo.setDeletedTime(record.getDeletedTime());
+        vo.setAiStatus(record.getAiStatus());
+        vo.setAiProvider(record.getAiProvider());
+        vo.setAiModel(record.getAiModel());
+        vo.setAiErrorMessage(record.getAiErrorMessage());
+        vo.setCreatedTime(record.getCreatedTime());
+        return vo;
+    }
+
+    private SpeakingRecordDetailVO toRecordDetailVO(SpeakingRecord record) {
+        SpeakingRecordDetailVO vo = new SpeakingRecordDetailVO();
+        vo.setRecordId(record.getId());
+        vo.setSessionId(record.getSessionId());
+        vo.setQuestionId(record.getQuestionId());
+
+        SpeakingQuestion question = record.getQuestionId() == null
+                ? null
+                : findQuestionIncludingDeleted(record.getQuestionId());
+
+        vo.setPart(question != null ? question.getPart() : null);
+        vo.setQuestionText(question != null ? question.getQuestionText() : null);
+        vo.setCueCard(question != null ? question.getCueCard() : null);
+
+        vo.setAudioUrl(record.getAudioUrl());
+        vo.setTranscript(record.getTranscript());
+        vo.setFluencyAndCoherence(record.getFluencyAndCoherence());
+        vo.setLexicalResource(record.getLexicalResource());
+        vo.setGrammaticalRangeAndAccuracy(record.getGrammaticalRangeAndAccuracy());
+        vo.setPronunciation(record.getPronunciation());
+        vo.setOverallScore(record.getOverallScore());
+        vo.setFeedback(record.getFeedback());
+        vo.setRelevanceComment(record.getRelevanceComment());
+        vo.setQualityComment(record.getQualityComment());
+        vo.setAnswerStatus(record.getAnswerStatus());
+        vo.setIsDeleted(record.getIsDeleted());
+        vo.setDeletedTime(record.getDeletedTime());
+        vo.setAiStatus(record.getAiStatus());
+        vo.setAiProvider(record.getAiProvider());
+        vo.setAiModel(record.getAiModel());
+        vo.setAiErrorMessage(record.getAiErrorMessage());
+        vo.setCreatedTime(record.getCreatedTime());
+        vo.setUpdatedTime(record.getUpdatedTime());
+        return vo;
+    }
+
+    private SpeakingQuestion findQuestionIncludingDeleted(Long questionId) {
+        if (questionId == null) {
+            return null;
+        }
+        try {
+            return speakingMapper.findAnyById(questionId);
+        } catch (Exception ignored) {
+            return speakingMapper.findById(questionId);
+        }
     }
 
     private String writeExamPlan(List<ExamStep> plan) {
@@ -648,13 +737,6 @@ public class UserSpeakingServiceImpl implements UserSpeakingService {
         return score.setScale(1, RoundingMode.HALF_UP);
     }
 
-    private BigDecimal mergeScore(BigDecimal incoming, BigDecimal current) {
-        if (incoming == null) {
-            return current;
-        }
-        return normalizeScore(incoming);
-    }
-
     private String firstNonBlank(String incoming, String fallback) {
         if (incoming != null && !incoming.isBlank()) {
             return incoming;
@@ -662,29 +744,24 @@ public class UserSpeakingServiceImpl implements UserSpeakingService {
         return fallback;
     }
 
+    private <T> T firstNonNull(T incoming, T fallback) {
+        return incoming != null ? incoming : fallback;
+    }
+
     private BigDecimal averageScore(List<BigDecimal> scores) {
         if (scores == null || scores.isEmpty()) {
             return null;
         }
-
-        List<BigDecimal> validScores = scores.stream()
-                .filter(Objects::nonNull)
-                .toList();
-
+        List<BigDecimal> validScores = scores.stream().filter(Objects::nonNull).toList();
         if (validScores.isEmpty()) {
             return null;
         }
-
-        BigDecimal sum = validScores.stream()
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-
+        BigDecimal sum = validScores.stream().reduce(BigDecimal.ZERO, BigDecimal::add);
         return sum.divide(BigDecimal.valueOf(validScores.size()), 1, RoundingMode.HALF_UP);
     }
 
     private String buildFallbackFinalFeedback(List<SpeakingRecord> records, Map<Long, SpeakingQuestion> questionMap) {
-        BigDecimal overall = averageScore(records.stream()
-                .map(SpeakingRecord::getOverallScore)
-                .toList());
+        BigDecimal overall = averageScore(records.stream().map(SpeakingRecord::getOverallScore).toList());
 
         String level;
         if (overall == null) {
@@ -697,12 +774,17 @@ public class UserSpeakingServiceImpl implements UserSpeakingService {
             level = "The candidate shows a basic but uneven speaking performance across the session.";
         }
 
-        return level
-                + " Fluency and pronunciation are relatively stable, but lexical flexibility and grammatical accuracy still need further improvement. "
-                + "Focus on extending answers with clearer structure, more precise vocabulary, and more accurate sentence patterns.";
+        return level + " Fluency and pronunciation are relatively stable, but lexical flexibility and grammatical accuracy still need further improvement. Focus on extending answers with clearer structure, more precise vocabulary, and more accurate sentence patterns.";
     }
 
-    private <T> T firstNonNull(T incoming, T fallback) {
-        return incoming != null ? incoming : fallback;
+    private int normalizePageNum(Integer pageNum) {
+        return pageNum == null || pageNum < 1 ? 1 : pageNum;
+    }
+
+    private int normalizePageSize(Integer pageSize) {
+        if (pageSize == null || pageSize < 1) {
+            return 10;
+        }
+        return Math.min(pageSize, 100);
     }
 }

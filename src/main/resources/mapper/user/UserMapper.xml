@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.andrew.smartielts.user.mapper.UserMapper">
+
+    <select id="findAnyById" resultType="com.andrew.smartielts.auth.domain.pojo.User">
+        select id, email, password, role, is_deleted, deleted_time, created_time
+        from sys_user
+        where id = #{id}
+        limit 1
+    </select>
+
+    <select id="findActiveById" resultType="com.andrew.smartielts.auth.domain.pojo.User">
+        select id, email, password, role, is_deleted, deleted_time, created_time
+        from sys_user
+        where id = #{id}
+          and is_deleted = 0
+        limit 1
+    </select>
+
+    <select id="countActive" resultType="java.lang.Long">
+        select count(*)
+        from sys_user
+        where is_deleted = 0
+        <if test="query != null and query.role != null and query.role != ''">
+            and role = #{query.role}
+        </if>
+        <if test="query != null and query.startTime != null">
+            and created_time <![CDATA[>=]]> #{query.startTime}
+        </if>
+        <if test="query != null and query.endTime != null">
+            and created_time <![CDATA[<=]]> #{query.endTime}
+        </if>
+    </select>
+
+    <select id="pageActive" resultType="com.andrew.smartielts.auth.domain.pojo.User">
+        select id, email, password, role, is_deleted, deleted_time, created_time
+        from sys_user
+        where is_deleted = 0
+        <if test="query != null and query.role != null and query.role != ''">
+            and role = #{query.role}
+        </if>
+        <if test="query != null and query.startTime != null">
+            and created_time <![CDATA[>=]]> #{query.startTime}
+        </if>
+        <if test="query != null and query.endTime != null">
+            and created_time <![CDATA[<=]]> #{query.endTime}
+        </if>
+        order by created_time
+        <choose>
+            <when test="query != null and query.sortDirection != null and query.sortDirection.name() == 'ASC'">
+                asc
+            </when>
+            <otherwise>
+                desc
+            </otherwise>
+        </choose>
+        limit #{limit} offset #{offset}
+    </select>
+
+    <select id="countDeleted" resultType="java.lang.Long">
+        select count(*)
+        from sys_user
+        where is_deleted = 1
+    </select>
+
+    <select id="pageDeleted" resultType="com.andrew.smartielts.auth.domain.pojo.User">
+        select id, email, password, role, is_deleted, deleted_time, created_time
+        from sys_user
+        where is_deleted = 1
+        order by deleted_time
+        <choose>
+            <when test="sortDirection == 'ASC'">
+                asc
+            </when>
+            <otherwise>
+                desc
+            </otherwise>
+        </choose>
+        limit #{limit} offset #{offset}
+    </select>
+
+    <select id="countAllUsers" resultType="java.lang.Long">
+        select count(*)
+        from sys_user
+    </select>
+
+    <select id="countActiveUsers" resultType="java.lang.Long">
+        select count(*)
+        from sys_user
+        where is_deleted = 0
+    </select>
+
+    <select id="countDeletedUsers" resultType="java.lang.Long">
+        select count(*)
+        from sys_user
+        where is_deleted = 1
+    </select>
+
+    <update id="softDeleteById">
+        update sys_user
+        set is_deleted = 1,
+            deleted_time = now()
+        where id = #{id}
+          and is_deleted = 0
+    </update>
+
+    <update id="restoreById">
+        update sys_user
+        set is_deleted = 0,
+            deleted_time = null
+        where id = #{id}
+          and is_deleted = 1
+    </update>
+
+    <select id="existsActiveEmailExcludeId" resultType="java.lang.Boolean">
+        select case when count(*) > 0 then true else false end
+        from sys_user
+        where email = #{email}
+          and is_deleted = 0
+          and id != #{id}
+    </select>
+
+    <update id="updateEmailById">
+        update sys_user
+        set email = #{email}
+        where id = #{id}
+          and is_deleted = 0
+    </update>
+
+</mapper>

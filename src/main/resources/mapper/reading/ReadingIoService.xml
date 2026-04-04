@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.andrew.smartielts.reading.mapper.ReadingTestMapper">
+
+    <resultMap id="BaseMap" type="com.andrew.smartielts.reading.domain.pojo.ReadingTest">
+        <id column="id" property="id"/>
+        <result column="title" property="title"/>
+        <result column="total_score" property="totalScore"/>
+        <result column="created_time" property="createdTime"/>
+        <result column="is_deleted" property="isDeleted"/>
+    </resultMap>
+
+    <insert id="insertReadingTest"
+            parameterType="com.andrew.smartielts.reading.domain.pojo.ReadingTest"
+            useGeneratedKeys="true"
+            keyProperty="id">
+        insert into reading_test (
+            title, total_score, created_time, is_deleted
+        ) values (
+                     #{title}, #{totalScore}, #{createdTime}, 0
+                 )
+    </insert>
+
+    <select id="findActiveById" resultMap="BaseMap">
+        select *
+        from reading_test
+        where id = #{id}
+          and is_deleted = 0
+    </select>
+
+    <select id="findAnyById" resultMap="BaseMap">
+        select *
+        from reading_test
+        where id = #{id}
+    </select>
+
+    <select id="findAllActive" resultMap="BaseMap">
+        select *
+        from reading_test
+        where is_deleted = 0
+        order by id desc
+    </select>
+
+    <select id="findAllDeleted" resultMap="BaseMap">
+        select *
+        from reading_test
+        where is_deleted = 1
+        order by id desc
+    </select>
+
+    <select id="findAllIncludingDeleted" resultMap="BaseMap">
+        select *
+        from reading_test
+        order by id desc
+    </select>
+
+    <update id="updateReadingTest"
+            parameterType="com.andrew.smartielts.reading.domain.pojo.ReadingTest">
+        update reading_test
+        set title = #{title},
+            total_score = #{totalScore}
+        where id = #{id}
+    </update>
+
+    <update id="softDeleteById">
+        update reading_test
+        set is_deleted = 1
+        where id = #{id}
+          and is_deleted = 0
+    </update>
+
+    <update id="restoreById">
+        update reading_test
+        set is_deleted = 0
+        where id = #{id}
+          and is_deleted = 1
+    </update>
+
+</mapper>

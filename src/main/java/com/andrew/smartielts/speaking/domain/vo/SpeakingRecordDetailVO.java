@@ -7,20 +7,54 @@ import java.time.LocalDateTime;
 
 @Data
 public class SpeakingRecordDetailVO {
+
     private Long recordId;
+
+    private String sessionId;
+
     private Long questionId;
+
     private String part;
+
     private String questionText;
+
+    private String cueCard;
+
     private String audioUrl;
+
     private String transcript;
+
     private BigDecimal fluencyAndCoherence;
+
     private BigDecimal lexicalResource;
+
     private BigDecimal grammaticalRangeAndAccuracy;
+
     private BigDecimal pronunciation;
+
     private BigDecimal overallScore;
-    private String relevanceComment;
-    private String qualityComment;
+
     private String feedback;
+
+    private String relevanceComment;
+
+    private String qualityComment;
+
     private String answerStatus;
+
+    private Integer isDeleted;
+
+    private LocalDateTime deletedTime;
+
+    private String aiStatus;
+
+    private String aiProvider;
+
+    private String aiModel;
+
+    private String aiErrorMessage;
+
     private LocalDateTime createdTime;
+
+    private LocalDateTime updatedTime;
 }

@@ -12,4 +12,6 @@ public class ReadingPassage {
     private String title;
 
     private String content;
+
+    private Integer isDeleted;
 }

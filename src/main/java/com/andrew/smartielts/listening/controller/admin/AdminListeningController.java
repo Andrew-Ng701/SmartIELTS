@@ -4,10 +4,13 @@ import com.andrew.smartielts.common.resultDTO.Result;
 import com.andrew.smartielts.listening.domain.dto.ListeningCreateTestForm;
 import com.andrew.smartielts.listening.domain.dto.ListeningQuestionDTO;
 import com.andrew.smartielts.listening.domain.dto.ListeningTestDTO;
+import com.andrew.smartielts.listening.domain.query.admin.AdminListeningDeletedRecordPageQuery;
+import com.andrew.smartielts.listening.domain.query.admin.AdminListeningRecordPageQuery;
 import com.andrew.smartielts.listening.service.admin.AdminListeningService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -42,8 +45,7 @@ public class AdminListeningController {
 
     @Operation(summary = "Update listening test")
     @PutMapping("/tests/{id}")
-    public Result<?> updateTest(@PathVariable Long id,
-                                @RequestBody ListeningTestDTO dto) {
+    public Result<?> updateTest(@PathVariable Long id, @RequestBody ListeningTestDTO dto) {
         return Result.success(adminListeningService.updateTest(id, dto));
     }
 
@@ -54,18 +56,23 @@ public class AdminListeningController {
         return Result.success();
     }
 
+    @Operation(summary = "Restore listening test")
+    @PutMapping("/tests/{id}/restore")
+    public Result<?> restoreTest(@PathVariable Long id) {
+        adminListeningService.restoreTest(id);
+        return Result.success();
+    }
+
     @Operation(summary = "Create listening question")
     @PostMapping("/tests/{testId}/questions")
-    public Result<?> createQuestion(@PathVariable Long testId,
-                                    @RequestBody ListeningQuestionDTO dto) {
+    public Result<?> createQuestion(@PathVariable Long testId, @RequestBody ListeningQuestionDTO dto) {
         adminListeningService.createQuestion(testId, dto);
         return Result.success();
     }
 
     @Operation(summary = "Update listening question")
     @PutMapping("/questions/{questionId}")
-    public Result<?> updateQuestion(@PathVariable Long questionId,
-                                    @RequestBody ListeningQuestionDTO dto) {
+    public Result<?> updateQuestion(@PathVariable Long questionId, @RequestBody ListeningQuestionDTO dto) {
         adminListeningService.updateQuestion(questionId, dto);
         return Result.success();
     }
@@ -77,9 +84,42 @@ public class AdminListeningController {
         return Result.success();
     }
 
-    @Operation(summary = "List all listening records")
-    @GetMapping("/records")
-    public Result<?> listAllRecords() {
-        return Result.success(adminListeningService.listAllRecords());
+    @Operation(summary = "Restore listening question")
+    @PutMapping("/questions/{questionId}/restore")
+    public Result<?> restoreQuestion(@PathVariable Long questionId) {
+        adminListeningService.restoreQuestion(questionId);
+        return Result.success();
+    }
+
+    @Operation(summary = "Admin listening active records overview")
+    @PostMapping("/records/overview")
+    public Result<?> pageActiveRecords(@Valid @RequestBody AdminListeningRecordPageQuery query) {
+        return Result.success(adminListeningService.pageActiveRecords(query));
+    }
+
+    @Operation(summary = "Admin listening deleted records overview")
+    @PostMapping("/records/deleted/overview")
+    public Result<?> pageDeletedRecords(@Valid @RequestBody AdminListeningDeletedRecordPageQuery query) {
+        return Result.success(adminListeningService.pageDeletedRecords(query));
+    }
+
+    @Operation(summary = "Get listening record detail")
+    @GetMapping("/records/{recordId}")
+    public Result<?> getRecord(@PathVariable Long recordId) {
+        return Result.success(adminListeningService.getRecord(recordId));
+    }
+
+    @Operation(summary = "Delete listening record")
+    @DeleteMapping("/records/{recordId}")
+    public Result<?> deleteRecord(@PathVariable Long recordId) {
+        adminListeningService.deleteRecord(recordId);
+        return Result.success();
+    }
+
+    @Operation(summary = "Restore listening record")
+    @PutMapping("/records/{recordId}/restore")
+    public Result<?> restoreRecord(@PathVariable Long recordId) {
+        adminListeningService.restoreRecord(recordId);
+        return Result.success();
     }
 }

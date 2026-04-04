@@ -7,16 +7,12 @@ import java.util.List;
 
 @Data
 public class ReadingRecordDetailVO {
-
     private Long recordId;
-
     private Long testId;
-
     private String testTitle;
-
     private Integer totalScore;
-
     private LocalDateTime createdTime;
 
+    private List<ReadingPassageVO> passages;
     private List<ReadingAnswerResultVO> answers;
 }

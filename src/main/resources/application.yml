@@ -32,7 +32,7 @@ jwt:
 
 mybatis:
   mapper-locations: ${MYBATIS_MAPPER_LOCATIONS:classpath*:mapper/**/*.xml}
-  type-aliases-package: ${MYBATIS_TYPE_ALIASES_PACKAGE:com.andrew.smartielts}
+  type-aliases-package: ${MYBATIS_TYPE_ALIASES_PACKAGE:com.andrew.smartielts.dashboard.domain.vo}
   configuration:
     map-underscore-to-camel-case: ${MYBATIS_MAP_UNDERSCORE_TO_CAMEL_CASE:true}
 
@@ -63,6 +63,15 @@ aliyun:
     access-key-id: ${ALIYUN_OCR_ACCESS_KEY_ID:}
     access-key-secret: ${ALIYUN_OCR_ACCESS_KEY_SECRET:}
     endpoint: ${ALIYUN_OCR_ENDPOINT:ocr-api.cn-hangzhou.aliyuncs.com}
+
+  dashboard:
+    intent:
+      llm:
+        base-url: ${ALIYUN_AI_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}
+        api-key: ${ALIYUN_AI_API_KEY:}
+        model: ${WRITING_SCORE_AI_MODEL:qwen3.5-flash}
+        connect-timeout-ms: 100000000
+        read-timeout-ms: 30000000
 
   writing-score-ai:
     model: ${WRITING_SCORE_AI_MODEL:qwen3.5-flash}

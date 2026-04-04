@@ -1,5 +1,6 @@
 package com.andrew.smartielts.writing.service.user.impl;
 
+import com.andrew.smartielts.common.page.PageResult;
 import com.andrew.smartielts.common.storage.BucketType;
 import com.andrew.smartielts.common.storage.UploadResult;
 import com.andrew.smartielts.common.storage.service.StorageService;
@@ -9,6 +10,8 @@ import com.andrew.smartielts.writing.ai.service.AiWritingScoringService;
 import com.andrew.smartielts.writing.domain.pojo.WritingQuestion;
 import com.andrew.smartielts.writing.domain.pojo.WritingRecord;
 import com.andrew.smartielts.writing.domain.pojo.WritingRecordAttachment;
+import com.andrew.smartielts.writing.domain.query.user.UserWritingDeletedRecordPageQuery;
+import com.andrew.smartielts.writing.domain.query.user.UserWritingRecordPageQuery;
 import com.andrew.smartielts.writing.domain.vo.WritingAttachmentVO;
 import com.andrew.smartielts.writing.domain.vo.WritingRecordDetailVO;
 import com.andrew.smartielts.writing.domain.vo.WritingRecordVO;
@@ -72,9 +75,7 @@ public class UserWritingServiceImpl implements UserWritingService {
 
     @Override
     @Transactional
-    public WritingRecordDetailVO submit(Long questionId, BigDecimal targetScore, String textContent,
-                                        MultipartFile[] images, MultipartFile pdf) {
-
+    public WritingRecordDetailVO submitRecord(Long questionId, BigDecimal targetScore, String textContent, MultipartFile[] images, MultipartFile pdf) {
         writingSubmissionValidator.validate(textContent, images, pdf);
 
         WritingQuestion question = writingQuestionMapper.findById(questionId);
@@ -92,8 +93,9 @@ public class UserWritingServiceImpl implements UserWritingService {
         record.setExtractedText(null);
         record.setTargetScore(targetScore);
         record.setAiStatus("PENDING");
-        record.setAiProvider("ALIYUN_DEEPSEEK");
+        record.setAiProvider("ALIYUN");
         record.setAiModel("qwen3.5-flash");
+        record.setIsDeleted(0);
         record.setCreatedTime(LocalDateTime.now());
         writingRecordMapper.insert(record);
 
@@ -105,11 +107,7 @@ public class UserWritingServiceImpl implements UserWritingService {
         } else if ("IMAGE".equals(inputType)) {
             for (int i = 0; i < images.length; i++) {
                 MultipartFile image = images[i];
-                UploadResult upload = storageService.upload(
-                        image,
-                        BucketType.WRITING_RECORD,
-                        "writing/" + record.getId()
-                );
+                UploadResult upload = storageService.upload(image, BucketType.WRITING_RECORD, "writing/" + record.getId());
 
                 WritingRecordAttachment attachment = new WritingRecordAttachment();
                 attachment.setRecordId(record.getId());
@@ -135,18 +133,13 @@ public class UserWritingServiceImpl implements UserWritingService {
                 writingRecordMapper.updateExtractedText(record.getId(), finalText);
             } catch (Exception e) {
                 record.setAiStatus("FAILED");
-                record.setAiFeedback("OCR 識別失敗: " + e.getMessage());
+                record.setAiFeedback("OCR failed: " + e.getMessage());
                 record.setAiRawResponse(e.toString());
                 writingRecordMapper.updateAiResult(record);
                 return buildDetailVO(record, question, attachments);
             }
-
         } else {
-            UploadResult upload = storageService.upload(
-                    pdf,
-                    BucketType.WRITING_RECORD,
-                    "writing/" + record.getId()
-            );
+            UploadResult upload = storageService.upload(pdf, BucketType.WRITING_RECORD, "writing/" + record.getId());
 
             WritingRecordAttachment attachment = new WritingRecordAttachment();
             attachment.setRecordId(record.getId());
@@ -185,7 +178,7 @@ public class UserWritingServiceImpl implements UserWritingService {
     }
 
     @Override
-    public List<WritingRecordVO> myRecords(Long userId) {
+    public List<WritingRecordVO> listMyRecords(Long userId) {
         List<WritingRecord> records = writingRecordMapper.findByUserId(userId);
         List<WritingRecordVO> result = new ArrayList<>();
 
@@ -209,27 +202,29 @@ public class UserWritingServiceImpl implements UserWritingService {
 
     @Override
     public WritingRecordDetailVO getRecord(Long recordId, Long userId) {
-        WritingRecord record = writingRecordMapper.findById(recordId);
+        WritingRecord record = writingRecordMapper.findByIdForUser(recordId,userId);
         if (record == null) {
             throw new RuntimeException("Writing record not found");
-        }
-        if (!record.getUserId().equals(userId)) {
-            throw new RuntimeException("No permission to access this record");
         }
 
         WritingQuestion question = writingQuestionMapper.findById(record.getQuestionId());
         List<WritingRecordAttachment> attachments = writingRecordAttachmentMapper.findByRecordId(recordId);
+        if (attachments == null) {
+            attachments = new ArrayList<>();
+        }
+
         return buildDetailVO(record, question, attachments);
     }
 
     private WritingRecordDetailVO buildDetailVO(WritingRecord record,
                                                 WritingQuestion question,
                                                 List<WritingRecordAttachment> attachments) {
-
         WritingRecordDetailVO vo = new WritingRecordDetailVO();
         vo.setRecordId(record.getId());
         vo.setQuestionId(record.getQuestionId());
         vo.setQuestionTitle(question != null ? question.getTitle() : null);
+        vo.setQuestionDescription(question != null ? question.getDescription() : null);
+        vo.setQuestionImageUrl(question != null ? question.getImageUrl() : null);
         vo.setTaskType(question != null ? question.getTaskType() : null);
         vo.setInputType(record.getInputType());
         vo.setTextContent(record.getTextContent());
@@ -243,18 +238,97 @@ public class UserWritingServiceImpl implements UserWritingService {
         vo.setCreatedTime(record.getCreatedTime());
 
         List<WritingAttachmentVO> attachmentVOList = new ArrayList<>();
-        for (WritingRecordAttachment attachment : attachments) {
-            WritingAttachmentVO attachmentVO = new WritingAttachmentVO();
-            attachmentVO.setId(attachment.getId());
-            attachmentVO.setFileType(attachment.getFileType());
-            attachmentVO.setFileUrl(attachment.getFileUrl());
-            attachmentVO.setSortOrder(attachment.getSortOrder());
-            attachmentVO.setCreatedTime(attachment.getCreatedTime());
-            attachmentVO.setOcrText(attachment.getOcrText());
-            attachmentVOList.add(attachmentVO);
+        if (attachments != null) {
+            for (WritingRecordAttachment attachment : attachments) {
+                WritingAttachmentVO attachmentVO = new WritingAttachmentVO();
+                attachmentVO.setId(attachment.getId());
+                attachmentVO.setFileType(attachment.getFileType());
+                attachmentVO.setFileUrl(attachment.getFileUrl());
+                attachmentVO.setSortOrder(attachment.getSortOrder());
+                attachmentVO.setCreatedTime(attachment.getCreatedTime());
+                attachmentVO.setOcrText(attachment.getOcrText());
+                attachmentVOList.add(attachmentVO);
+            }
         }
 
         vo.setAttachments(attachmentVOList);
         return vo;
+    }
+
+    @Override
+    public PageResult<WritingRecordVO> pageActiveRecords(Long userId, UserWritingRecordPageQuery query) {
+        UserWritingRecordPageQuery safeQuery = query == null ? new UserWritingRecordPageQuery() : query;
+
+        int pageNum = normalizePageNum(safeQuery.getPageNum());
+        int pageSize = normalizePageSize(safeQuery.getPageSize());
+        int offset = (pageNum - 1) * pageSize;
+
+        Long total = writingRecordMapper.countUserActive(userId, safeQuery);
+        if (total == null || total == 0L) {
+            return new PageResult<>(new ArrayList<>(), 0L, pageNum, pageSize);
+        }
+
+        List<WritingRecord> records = writingRecordMapper.pageUserActive(userId, safeQuery, offset, pageSize);
+        List<WritingRecordVO> voList = new ArrayList<>();
+
+        if (records != null) {
+            for (WritingRecord record : records) {
+                voList.add(toRecordVO(record));
+            }
+        }
+
+        return new PageResult<>(voList, total, pageNum, pageSize);
+    }
+
+    @Override
+    public PageResult<WritingRecordVO> pageDeletedRecords(Long userId, UserWritingDeletedRecordPageQuery query) {
+        UserWritingDeletedRecordPageQuery safeQuery =
+                query == null ? new UserWritingDeletedRecordPageQuery() : query;
+
+        int pageNum = normalizePageNum(safeQuery.getPageNum());
+        int pageSize = normalizePageSize(safeQuery.getPageSize());
+        int offset = (pageNum - 1) * pageSize;
+
+        Long total = writingRecordMapper.countUserDeleted(userId, safeQuery);
+        if (total == null || total == 0L) {
+            return new PageResult<>(new ArrayList<>(), 0L, pageNum, pageSize);
+        }
+
+        List<WritingRecord> records = writingRecordMapper.pageUserDeleted(userId, safeQuery, offset, pageSize);
+        List<WritingRecordVO> voList = new ArrayList<>();
+
+        if (records != null) {
+            for (WritingRecord record : records) {
+                voList.add(toRecordVO(record));
+            }
+        }
+
+        return new PageResult<>(voList, total, pageNum, pageSize);
+    }
+
+    private WritingRecordVO toRecordVO(WritingRecord record) {
+        WritingRecordVO vo = new WritingRecordVO();
+        vo.setId(record.getId());
+        vo.setQuestionId(record.getQuestionId());
+        vo.setInputType(record.getInputType());
+        vo.setTargetScore(record.getTargetScore());
+        vo.setAiScore(record.getAiScore());
+        vo.setAiStatus(record.getAiStatus());
+        vo.setCreatedTime(record.getCreatedTime());
+
+        WritingQuestion question = writingQuestionMapper.findById(record.getQuestionId());
+        vo.setQuestionTitle(question != null ? question.getTitle() : null);
+        return vo;
+    }
+
+    private int normalizePageNum(Integer pageNum) {
+        return pageNum == null || pageNum < 1 ? 1 : pageNum;
+    }
+
+    private int normalizePageSize(Integer pageSize) {
+        if (pageSize == null || pageSize < 1) {
+            return 10;
+        }
+        return Math.min(pageSize, 100);
     }
 }
