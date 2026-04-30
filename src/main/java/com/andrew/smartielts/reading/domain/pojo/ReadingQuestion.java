@@ -1,12 +1,16 @@
 package com.andrew.smartielts.reading.domain.pojo;
 
+import com.andrew.smartielts.common.domain.pojo.QuestionAnswerRule;
 import lombok.Data;
+
+import java.util.List;
 
 @Data
 public class ReadingQuestion {
-
     private Long id;
     private Long passageId;
+    private Long partGroupId;
+    private Integer questionNumber;
     private String questionType;
     private String answerMode;
     private String questionText;
@@ -14,7 +18,12 @@ public class ReadingQuestion {
     private String optionsJson;
     private String acceptedAnswersJson;
     private String groupLabel;
+    private Integer caseInsensitive;
+    private Integer ignoreWhitespace;
+    private Integer ignorePunctuation;
     private Integer displayOrder;
     private Integer score;
     private Integer isDeleted;
+
+    private List<QuestionAnswerRule> answerRules;
 }

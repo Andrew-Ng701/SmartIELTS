@@ -1,12 +1,15 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <!DOCTYPE mapper
         PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
-        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.andrew.smartielts.reading.mapper.ReadingQuestionMapper">
 
-    <resultMap id="BaseMap" type="com.andrew.smartielts.reading.domain.pojo.ReadingQuestion">
+    <resultMap id="ReadingQuestionResultMap"
+               type="com.andrew.smartielts.reading.domain.pojo.ReadingQuestion">
         <id column="id" property="id"/>
         <result column="passage_id" property="passageId"/>
+        <result column="part_group_id" property="partGroupId"/>
+        <result column="question_number" property="questionNumber"/>
         <result column="question_type" property="questionType"/>
         <result column="answer_mode" property="answerMode"/>
         <result column="question_text" property="questionText"/>
@@ -14,66 +17,86 @@
         <result column="options_json" property="optionsJson"/>
         <result column="accepted_answers_json" property="acceptedAnswersJson"/>
         <result column="group_label" property="groupLabel"/>
+        <result column="case_insensitive" property="caseInsensitive"/>
+        <result column="ignore_whitespace" property="ignoreWhitespace"/>
+        <result column="ignore_punctuation" property="ignorePunctuation"/>
         <result column="display_order" property="displayOrder"/>
         <result column="score" property="score"/>
         <result column="is_deleted" property="isDeleted"/>
     </resultMap>
 
+    <sql id="Base_Column_List">
+        id, passage_id, part_group_id, question_number, question_type, answer_mode,
+        question_text, correct_answer, options_json, accepted_answers_json,
+        group_label, case_insensitive, ignore_whitespace, ignore_punctuation,
+        display_order, score, is_deleted
+    </sql>
+
     <insert id="insertReadingQuestion"
             parameterType="com.andrew.smartielts.reading.domain.pojo.ReadingQuestion"
             useGeneratedKeys="true"
-            keyProperty="id">
+            keyProperty="id"
+            keyColumn="id">
         insert into reading_question (
-            passage_id, question_type, answer_mode, question_text,
-            correct_answer, options_json, accepted_answers_json,
-            group_label, display_order, score, is_deleted
+        passage_id, part_group_id, question_number, question_type, answer_mode,
+        question_text, correct_answer, options_json, accepted_answers_json,
+        group_label, case_insensitive, ignore_whitespace, ignore_punctuation,
+        display_order, score, is_deleted
         ) values (
-                     #{passageId}, #{questionType}, #{answerMode}, #{questionText},
-                     #{correctAnswer}, #{optionsJson}, #{acceptedAnswersJson},
-                     #{groupLabel}, #{displayOrder}, #{score}, 0
-                 )
+        #{passageId}, #{partGroupId}, #{questionNumber}, #{questionType}, #{answerMode},
+        #{questionText}, #{correctAnswer}, #{optionsJson}, #{acceptedAnswersJson},
+        #{groupLabel}, #{caseInsensitive}, #{ignoreWhitespace}, #{ignorePunctuation},
+        #{displayOrder}, #{score}, 0
+        )
     </insert>
 
-    <select id="findActiveById" resultMap="BaseMap">
-        select *
+    <select id="findActiveById" resultMap="ReadingQuestionResultMap">
+        select <include refid="Base_Column_List"/>
         from reading_question
         where id = #{id}
-          and is_deleted = 0
+        and is_deleted = 0
+        limit 1
     </select>
 
-    <select id="findAnyById" resultMap="BaseMap">
-        select *
+    <select id="findAnyById" resultMap="ReadingQuestionResultMap">
+        select <include refid="Base_Column_List"/>
         from reading_question
         where id = #{id}
+        limit 1
     </select>
 
-    <select id="findActiveByPassageId" resultMap="BaseMap">
-        select *
+    <select id="findActiveByPassageId" resultMap="ReadingQuestionResultMap">
+        select <include refid="Base_Column_List"/>
         from reading_question
         where passage_id = #{passageId}
-          and is_deleted = 0
-        order by display_order asc, id asc
+        and is_deleted = 0
+        order by display_order asc, question_number asc, id asc
     </select>
 
-    <select id="findAnyByPassageId" resultMap="BaseMap">
-        select *
+    <select id="findAnyByPassageId" resultMap="ReadingQuestionResultMap">
+        select <include refid="Base_Column_List"/>
         from reading_question
         where passage_id = #{passageId}
-        order by display_order asc, id asc
+        order by display_order asc, question_number asc, id asc
     </select>
 
     <update id="updateReadingQuestion"
             parameterType="com.andrew.smartielts.reading.domain.pojo.ReadingQuestion">
         update reading_question
-        set question_type = #{questionType},
-            answer_mode = #{answerMode},
-            question_text = #{questionText},
-            correct_answer = #{correctAnswer},
-            options_json = #{optionsJson},
-            accepted_answers_json = #{acceptedAnswersJson},
-            group_label = #{groupLabel},
-            display_order = #{displayOrder},
-            score = #{score}
+        set part_group_id = #{partGroupId},
+        question_number = #{questionNumber},
+        question_type = #{questionType},
+        answer_mode = #{answerMode},
+        question_text = #{questionText},
+        correct_answer = #{correctAnswer},
+        options_json = #{optionsJson},
+        accepted_answers_json = #{acceptedAnswersJson},
+        group_label = #{groupLabel},
+        case_insensitive = #{caseInsensitive},
+        ignore_whitespace = #{ignoreWhitespace},
+        ignore_punctuation = #{ignorePunctuation},
+        display_order = #{displayOrder},
+        score = #{score}
         where id = #{id}
     </update>
 
@@ -81,28 +104,28 @@
         update reading_question
         set is_deleted = 1
         where id = #{id}
-          and is_deleted = 0
+        and is_deleted = 0
     </update>
 
     <update id="softDeleteByPassageId">
         update reading_question
         set is_deleted = 1
         where passage_id = #{passageId}
-          and is_deleted = 0
+        and is_deleted = 0
     </update>
 
     <update id="restoreById">
         update reading_question
         set is_deleted = 0
         where id = #{id}
-          and is_deleted = 1
+        and is_deleted = 1
     </update>
 
     <update id="restoreByPassageId">
         update reading_question
         set is_deleted = 0
         where passage_id = #{passageId}
-          and is_deleted = 1
+        and is_deleted = 1
     </update>
 
 </mapper>

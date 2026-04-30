@@ -1,13 +1,17 @@
 package com.andrew.smartielts.dashboard.agent.ask.dto;
 
+import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 
 import java.util.List;
 import java.util.Map;
 
 @Data
 @Builder
+@NoArgsConstructor
+@AllArgsConstructor
 public class DashboardAskDecisionResult {
 
     /**
@@ -29,6 +33,7 @@ public class DashboardAskDecisionResult {
      * 若不足，讓後端直接轉成 fallback intent / sql generation hint
      */
     private String capability;
+
     private Map<String, Object> filters;
 
     /**
@@ -42,5 +47,6 @@ public class DashboardAskDecisionResult {
     private List<String> requiredDataScopes;
 
     private List<String> suggestions;
+
     private Map<String, Object> meta;
 }

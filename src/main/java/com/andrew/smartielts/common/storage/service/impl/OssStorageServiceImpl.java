@@ -7,30 +7,33 @@ import com.andrew.smartielts.common.storage.BucketType;
 import com.andrew.smartielts.common.storage.OssProperties;
 import com.andrew.smartielts.common.storage.UploadResult;
 import com.andrew.smartielts.common.storage.service.StorageService;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.util.Map;
 import java.util.UUID;
 
 @Service
 public class OssStorageServiceImpl implements StorageService {
 
-    @Autowired
-    private OssProperties ossProperties;
+    private final OssProperties ossProperties;
+
+    public OssStorageServiceImpl(OssProperties ossProperties) {
+        this.ossProperties = ossProperties;
+    }
 
     @Override
     public UploadResult upload(MultipartFile file, BucketType bucketType, String bizPath) {
-        OssProperties.BucketConfig bucketConfig = getBucketConfig(bucketType);
-
-        String normalizedBizPath = normalizeBizPath(bizPath);
-        String originalName = file.getOriginalFilename();
-        String suffix = "";
-        if (originalName != null && originalName.contains(".")) {
-            suffix = originalName.substring(originalName.lastIndexOf("."));
+        if (file == null || file.isEmpty()) {
+            throw new RuntimeException("Upload file is empty");
+        }
+        if (bucketType == null) {
+            throw new RuntimeException("Bucket type is required");
         }
 
+        OssProperties.BucketConfig bucketConfig = ossProperties.requireBucket(bucketType.getKey());
+        String normalizedBizPath = normalizeBizPath(bizPath);
+        String originalName = file.getOriginalFilename();
+        String suffix = extractSuffix(originalName);
         String objectKey = normalizedBizPath + UUID.randomUUID() + suffix;
 
         OSS ossClient = null;
@@ -48,11 +51,7 @@ public class OssStorageServiceImpl implements StorageService {
             );
             ossClient.putObject(putObjectRequest);
 
-            String domain = bucketConfig.getDomain();
-            if (domain.endsWith("/")) {
-                domain = domain.substring(0, domain.length() - 1);
-            }
-            String fileUrl = domain + "/" + objectKey;
+            String fileUrl = bucketConfig.normalizedDomain() + "/" + objectKey;
             return new UploadResult(fileUrl, objectKey);
         } catch (Exception e) {
             throw new RuntimeException("OSS upload failed: " + e.getMessage(), e);
@@ -65,12 +64,14 @@ public class OssStorageServiceImpl implements StorageService {
 
     @Override
     public void delete(BucketType bucketType, String objectKey) {
+        if (bucketType == null) {
+            throw new RuntimeException("Bucket type is required");
+        }
         if (objectKey == null || objectKey.isBlank()) {
             return;
         }
 
-        OssProperties.BucketConfig bucketConfig = getBucketConfig(bucketType);
-
+        OssProperties.BucketConfig bucketConfig = ossProperties.requireBucket(bucketType.getKey());
         OSS ossClient = null;
         try {
             ossClient = new OSSClientBuilder().build(
@@ -88,25 +89,28 @@ public class OssStorageServiceImpl implements StorageService {
         }
     }
 
-    private OssProperties.BucketConfig getBucketConfig(BucketType bucketType) {
-        Map<String, OssProperties.BucketConfig> buckets = ossProperties.getBuckets();
-        if (buckets == null || !buckets.containsKey(bucketType.getKey())) {
-            throw new RuntimeException("OSS bucket config not found: " + bucketType.getKey());
-        }
-        return buckets.get(bucketType.getKey());
-    }
-
     private String normalizeBizPath(String bizPath) {
         if (bizPath == null || bizPath.isBlank()) {
             return "";
         }
         String result = bizPath.trim().replace("\\", "/");
-        if (result.startsWith("/")) {
+        while (result.startsWith("/")) {
             result = result.substring(1);
         }
-        if (!result.endsWith("/")) {
+        if (!result.isEmpty() && !result.endsWith("/")) {
             result = result + "/";
         }
         return result;
+    }
+
+    private String extractSuffix(String originalName) {
+        if (originalName == null || originalName.isBlank()) {
+            return "";
+        }
+        int index = originalName.lastIndexOf('.');
+        if (index < 0 || index == originalName.length() - 1) {
+            return "";
+        }
+        return originalName.substring(index);
     }
 }

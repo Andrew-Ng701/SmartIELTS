@@ -49,7 +49,7 @@ public final class DashboardAskDecisionPromptConstants {
                 ADMIN_RECENT_ISSUES
                 STRUCTURED_QUERY
                 null
-            20. Do not output alias values such as STRUCTUREDQUERY, NEEDCLARIFICATION, DIRECTANSWER, or GENERATESQL.
+            20. Do not output alias values such as STRUCTURED_QUERY, NEED_CLARIFICATION, DIRECT_ANSWER, or GENERATE_SQL.
             21. Keep reviewSummary concise and factual.
             22. The answer language must follow responseLanguage exactly.
             23. If responseLanguage is zh-Hant, answer in Traditional Chinese.

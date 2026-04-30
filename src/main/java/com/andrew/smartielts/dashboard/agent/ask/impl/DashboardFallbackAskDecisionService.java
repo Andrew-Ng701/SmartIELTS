@@ -17,7 +17,7 @@ import java.util.Map;
 public class DashboardFallbackAskDecisionService implements DashboardAskDecisionService {
 
     private static final String ROLE_USER = "USER";
-    private static final String CAPABILITY_STRUCTURED_QUERY = "STRUCTUREDQUERY";
+    private static final String CAPABILITY_STRUCTURED_QUERY = "STRUCTURED_QUERY";
     private static final String MODULE_READING = "reading";
     private static final String MODULE_LISTENING = "listening";
     private static final String MODULE_WRITING = "writing";

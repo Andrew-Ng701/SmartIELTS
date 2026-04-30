@@ -4,7 +4,6 @@ import com.andrew.smartielts.common.page.PageResult;
 import com.andrew.smartielts.listening.domain.dto.ListeningCreateTestForm;
 import com.andrew.smartielts.listening.domain.dto.ListeningQuestionDTO;
 import com.andrew.smartielts.listening.domain.dto.ListeningTestDTO;
-import com.andrew.smartielts.listening.domain.pojo.ListeningTest;
 import com.andrew.smartielts.listening.domain.query.admin.AdminListeningDeletedRecordPageQuery;
 import com.andrew.smartielts.listening.domain.query.admin.AdminListeningRecordPageQuery;
 import com.andrew.smartielts.listening.domain.vo.ListeningRecordDetailVO;
@@ -16,13 +15,13 @@ import java.util.List;
 
 public interface AdminListeningService {
 
-    ListeningTest createTest(ListeningCreateTestForm form);
+    ListeningTestDetailVO createTest(ListeningCreateTestForm form);
 
-    ListeningTest updateTest(Long id, ListeningTestDTO dto);
+    ListeningTestDetailVO updateTest(Long id, ListeningTestDTO dto);
 
-    ListeningTest updateTestAudio(Long id, MultipartFile file, String title, Integer totalScore, String transcriptText);
+    ListeningTestDetailVO updateTestAudio(Long id, MultipartFile file, String title, Integer totalScore, String transcriptText);
 
-    List<ListeningTest> listTests();
+    List<ListeningTestDetailVO> listTests();
 
     ListeningTestDetailVO getTestDetail(Long testId);
 

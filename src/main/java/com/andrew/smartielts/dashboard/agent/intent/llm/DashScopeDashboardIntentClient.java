@@ -73,7 +73,7 @@ public class DashScopeDashboardIntentClient implements DashboardLlmClient {
 
     private String buildSystemPrompt() {
         return DashboardIntentPromptConstants.DASHSCOPE_INTENT_SYSTEM_PROMPT
-                + DashboardIntentFewShotConstants.DASHSCOPE_INTENT_FEW_SHOTS;
+                + DashboardIntentFewShotConstants.DASH_SCOPE_INTENT_FEW_SHOTS;
     }
 
     private String buildUserPrompt(DashboardIntentParseRequest request) {
@@ -106,7 +106,7 @@ public class DashScopeDashboardIntentClient implements DashboardLlmClient {
     @SuppressWarnings("unchecked")
     private Map<String, Object> readSchemaAsMap() {
         try {
-            return objectMapper.readValue(DashboardIntentSchemaConstants.DASHSCOPE_INTENT_JSON_SCHEMA, Map.class);
+            return objectMapper.readValue(DashboardIntentSchemaConstants.DASH_SCOPE_INTENT_JSON_SCHEMA, Map.class);
         } catch (JsonProcessingException e) {
             throw new IllegalStateException("Invalid dashboard intent schema constant", e);
         }

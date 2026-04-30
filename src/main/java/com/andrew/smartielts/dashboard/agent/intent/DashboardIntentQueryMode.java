@@ -16,8 +16,8 @@ public enum DashboardIntentQueryMode {
         String normalized = value.trim().toUpperCase();
 
         return switch (normalized) {
-            case "SIMPLEHANDLER" -> SIMPLE_HANDLER;
-            case "STRUCTUREDQUERY" -> STRUCTURED_QUERY;
+            case "SIMPLE_HANDLER" -> SIMPLE_HANDLER;
+            case "STRUCTURED_QUERY" -> STRUCTURED_QUERY;
             default -> DashboardIntentQueryMode.valueOf(normalized);
         };
     }

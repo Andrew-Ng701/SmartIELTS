@@ -61,29 +61,43 @@ public class DashboardAskContextResolver {
         if (objectRef == null) {
             return;
         }
-        putIfPresent(result, "recordId", objectRef.getRecordId());
-        putIfPresent(result, "testId", objectRef.getTestId());
-        putIfPresent(result, "passageId", objectRef.getPassageId());
-        putIfPresent(result, "questionId", objectRef.getQuestionId());
+        putIfPresent(result, DashboardAskContextKeys.CONTEXT_KEY_RECORD_ID, objectRef.getRecordId());
+        putIfPresent(result, DashboardAskContextKeys.CONTEXT_KEY_TEST_ID, objectRef.getTestId());
+        putIfPresent(result, DashboardAskContextKeys.CONTEXT_KEY_PASSAGE_ID, objectRef.getPassageId());
+        putIfPresent(result, DashboardAskContextKeys.CONTEXT_KEY_QUESTION_ID, objectRef.getQuestionId());
         putIfPresent(result, DashboardAskContextKeys.CONTEXT_KEY_QUESTION_NUMBER, objectRef.getQuestionNumber());
-        putIfPresent(result, "sessionId", objectRef.getSessionId());
-        putIfPresent(result, "objectType", objectRef.getObjectType());
+        putIfPresent(result, DashboardAskContextKeys.CONTEXT_KEY_SESSION_ID, objectRef.getSessionId());
+        putIfPresent(result, DashboardAskContextKeys.CONTEXT_KEY_OBJECT_TYPE, objectRef.getObjectType());
     }
 
-    private void fillFromLearningObjects(
-            Map<String, Object> result,
-            LearningObjectDTO test,
-            LearningObjectDTO passage,
-            LearningObjectDTO question
-    ) {
+    private void fillFromLearningObjects(Map<String, Object> result,
+                                         LearningObjectDTO test,
+                                         LearningObjectDTO passage,
+                                         LearningObjectDTO question) {
         if (test != null) {
-            putIfPresent(result, DashboardAskContextKeys.CONTEXT_KEY_TEST_TITLE, firstNonBlank(test.getTitle(), test.getTestTitle()));
+            putIfPresent(
+                    result,
+                    DashboardAskContextKeys.CONTEXT_KEY_TEST_TITLE,
+                    firstNonBlank(test.getTitle(), test.getTestTitle())
+            );
         }
 
         if (passage != null) {
-            putIfPresent(result, DashboardAskContextKeys.CONTEXT_KEY_PASSAGE_TITLE, firstNonBlank(passage.getPassageTitle(), passage.getTitle()));
-            putIfPresent(result, DashboardAskContextKeys.CONTEXT_KEY_ARTICLE_TITLE, firstNonBlank(passage.getTitle(), passage.getPassageTitle()));
-            putIfPresent(result, DashboardAskContextKeys.CONTEXT_KEY_ARTICLE_CONTENT, firstNonBlank(passage.getPassageContent(), passage.getContent()));
+            putIfPresent(
+                    result,
+                    DashboardAskContextKeys.CONTEXT_KEY_PASSAGE_TITLE,
+                    firstNonBlank(passage.getPassageTitle(), passage.getTitle())
+            );
+            putIfPresent(
+                    result,
+                    DashboardAskContextKeys.CONTEXT_KEY_ARTICLE_TITLE,
+                    firstNonBlank(passage.getTitle(), passage.getPassageTitle())
+            );
+            putIfPresent(
+                    result,
+                    DashboardAskContextKeys.CONTEXT_KEY_ARTICLE_CONTENT,
+                    firstNonBlank(passage.getPassageContent(), passage.getContent())
+            );
         }
 
         if (question != null) {
@@ -96,10 +110,8 @@ public class DashboardAskContextResolver {
             putIfPresent(result, DashboardAskContextKeys.CONTEXT_KEY_CORRECT_ANSWER, question.getCorrectAnswer());
             putIfPresent(result, DashboardAskContextKeys.CONTEXT_KEY_EXPLANATION, question.getExplanation());
             putIfPresent(result, DashboardAskContextKeys.CONTEXT_KEY_CUE_CARD, question.getCueCard());
-
             putIfPresent(result, DashboardAskContextKeys.CONTEXT_KEY_IMAGE_URL, question.getImageUrl());
             putIfPresent(result, DashboardAskContextKeys.CONTEXT_KEY_TASK_TYPE, question.getTaskType());
-
             putIfPresent(result, DashboardAskContextKeys.CONTEXT_KEY_TRANSCRIPT_TEXT, question.getTranscriptText());
             putIfPresent(result, DashboardAskContextKeys.CONTEXT_KEY_AUDIO_URL, question.getAudioUrl());
             putIfPresent(result, DashboardAskContextKeys.CONTEXT_KEY_AUDIO_OBJECT_KEY, question.getAudioObjectKey());
@@ -119,6 +131,7 @@ public class DashboardAskContextResolver {
         if (requestContext == null || requestContext.isEmpty()) {
             return;
         }
+
         overlayIfPresent(result, DashboardAskContextKeys.CONTEXT_KEY_USER_ANSWER, requestContext);
         overlayIfPresent(result, DashboardAskContextKeys.CONTEXT_KEY_USER_ESSAY, requestContext);
         overlayIfPresent(result, DashboardAskContextKeys.CONTEXT_KEY_USER_TRANSCRIPT, requestContext);
@@ -138,14 +151,24 @@ public class DashboardAskContextResolver {
         if (options instanceof List<?> list && !list.isEmpty()) {
             result.put(DashboardAskContextKeys.CONTEXT_KEY_OPTIONS, list);
         }
+
+        Object acceptedAnswers = requestContext.get(DashboardAskContextKeys.CONTEXT_KEY_ACCEPTED_ANSWERS);
+        if (acceptedAnswers instanceof List<?> list && !list.isEmpty()) {
+            result.put(DashboardAskContextKeys.CONTEXT_KEY_ACCEPTED_ANSWERS, list);
+        }
     }
+
     private void fillFromUserAttempt(Map<String, Object> result, UserAttemptDTO userAttempt) {
         if (userAttempt == null) {
             return;
         }
+
         putIfPresent(result, DashboardAskContextKeys.CONTEXT_KEY_USER_ANSWER, userAttempt.getUserAnswer());
-        putIfPresent(result, DashboardAskContextKeys.CONTEXT_KEY_USER_ESSAY,
-                firstNonBlank(userAttempt.getTextContent(), userAttempt.getExtractedText(), userAttempt.getUserAnswer()));
+        putIfPresent(
+                result,
+                DashboardAskContextKeys.CONTEXT_KEY_USER_ESSAY,
+                firstNonBlank(userAttempt.getTextContent(), userAttempt.getExtractedText(), userAttempt.getUserAnswer())
+        );
         putIfPresent(result, DashboardAskContextKeys.CONTEXT_KEY_USER_TRANSCRIPT, userAttempt.getTranscript());
         putIfPresent(result, DashboardAskContextKeys.CONTEXT_KEY_USER_FEEDBACK, userAttempt.getFeedback());
         putIfPresent(result, DashboardAskContextKeys.CONTEXT_KEY_AI_FEEDBACK, userAttempt.getAiFeedback());
@@ -166,6 +189,7 @@ public class DashboardAskContextResolver {
         if (preloadedPayload == null) {
             return;
         }
+
         putIfPresent(result, DashboardAskContextKeys.CONTEXT_KEY_PRELOADED_PAYLOAD, preloadedPayload);
         putIfPresent(result, DashboardAskContextKeys.CONTEXT_KEY_OVERVIEW, preloadedPayload.getOverview());
         putIfPresent(result, DashboardAskContextKeys.CONTEXT_KEY_PROGRESS_SUMMARY, preloadedPayload.getProgressSummary());
@@ -181,24 +205,43 @@ public class DashboardAskContextResolver {
                         ModuleLearningContextDTO moduleContext,
                         DashboardAskObjectRef objectRef) {
         Map<String, Object> ext = new LinkedHashMap<>();
-        putIfPresent(ext, "hasLearningContext", learningContext != null && !learningContext.isEmpty());
-        putIfPresent(ext, "hasModuleContext", moduleContext != null);
-        putIfPresent(ext, "objectRefSummary", buildObjectRefSummary(objectRef));
+
+        putIfPresent(
+                ext,
+                DashboardAskContextKeys.CONTEXT_KEY_HAS_LEARNING_CONTEXT,
+                learningContext != null && !learningContext.isEmpty()
+        );
+        putIfPresent(
+                ext,
+                DashboardAskContextKeys.CONTEXT_KEY_HAS_MODULE_CONTEXT,
+                moduleContext != null
+        );
+        putIfPresent(
+                ext,
+                DashboardAskContextKeys.CONTEXT_KEY_OBJECT_REF_SUMMARY,
+                buildObjectRefSummary(objectRef)
+        );
+
         if (moduleContext != null && moduleContext.getExt() != null && !moduleContext.getExt().isEmpty()) {
-            ext.put("moduleContextExt", moduleContext.getExt());
+            ext.put(DashboardAskContextKeys.CONTEXT_KEY_MODULE_CONTEXT_EXT, moduleContext.getExt());
         }
+
         if (!ext.isEmpty()) {
             result.put(DashboardAskContextKeys.CONTEXT_KEY_EXT, ext);
         }
     }
 
     private ModuleLearningContextDTO extractModuleContext(Map<String, Object> learningContext) {
-        Object value = learningContext == null ? null : learningContext.get(DashboardLearningContextConstants.CONTEXT_KEY_MODULE_CONTEXT);
+        Object value = learningContext == null
+                ? null
+                : learningContext.get(DashboardLearningContextConstants.CONTEXT_KEY_MODULE_CONTEXT);
         return value instanceof ModuleLearningContextDTO dto ? dto : null;
     }
 
     private LearningObjectDTO extractTest(Map<String, Object> learningContext, ModuleLearningContextDTO moduleContext) {
-        Object value = learningContext == null ? null : learningContext.get(DashboardLearningContextConstants.CONTEXT_KEY_TEST);
+        Object value = learningContext == null
+                ? null
+                : learningContext.get(DashboardLearningContextConstants.CONTEXT_KEY_TEST);
         if (value instanceof LearningObjectDTO dto) {
             return dto;
         }
@@ -206,7 +249,9 @@ public class DashboardAskContextResolver {
     }
 
     private LearningObjectDTO extractPassage(Map<String, Object> learningContext, ModuleLearningContextDTO moduleContext) {
-        Object value = learningContext == null ? null : learningContext.get(DashboardLearningContextConstants.CONTEXT_KEY_PASSAGE);
+        Object value = learningContext == null
+                ? null
+                : learningContext.get(DashboardLearningContextConstants.CONTEXT_KEY_PASSAGE);
         if (value instanceof LearningObjectDTO dto) {
             return dto;
         }
@@ -214,7 +259,9 @@ public class DashboardAskContextResolver {
     }
 
     private LearningObjectDTO extractQuestion(Map<String, Object> learningContext, ModuleLearningContextDTO moduleContext) {
-        Object value = learningContext == null ? null : learningContext.get(DashboardLearningContextConstants.CONTEXT_KEY_QUESTION);
+        Object value = learningContext == null
+                ? null
+                : learningContext.get(DashboardLearningContextConstants.CONTEXT_KEY_QUESTION);
         if (value instanceof LearningObjectDTO dto) {
             return dto;
         }
@@ -222,7 +269,9 @@ public class DashboardAskContextResolver {
     }
 
     private UserAttemptDTO extractUserAttempt(Map<String, Object> learningContext, ModuleLearningContextDTO moduleContext) {
-        Object value = learningContext == null ? null : learningContext.get(DashboardLearningContextConstants.CONTEXT_KEY_USER_ATTEMPT);
+        Object value = learningContext == null
+                ? null
+                : learningContext.get(DashboardLearningContextConstants.CONTEXT_KEY_USER_ATTEMPT);
         if (value instanceof UserAttemptDTO dto) {
             return dto;
         }
@@ -286,13 +335,13 @@ public class DashboardAskContextResolver {
             return null;
         }
         return "module=" + safeString(objectRef.getModule())
-                + ", objectType=" + safeString(objectRef.getObjectType())
-                + ", testId=" + objectRef.getTestId()
-                + ", passageId=" + objectRef.getPassageId()
-                + ", questionId=" + objectRef.getQuestionId()
-                + ", recordId=" + objectRef.getRecordId()
-                + ", questionNumber=" + objectRef.getQuestionNumber()
-                + ", sessionId=" + safeString(objectRef.getSessionId());
+                + ", object_type=" + safeString(objectRef.getObjectType())
+                + ", test_id=" + objectRef.getTestId()
+                + ", passage_id=" + objectRef.getPassageId()
+                + ", question_id=" + objectRef.getQuestionId()
+                + ", record_id=" + objectRef.getRecordId()
+                + ", question_number=" + objectRef.getQuestionNumber()
+                + ", session_id=" + safeString(objectRef.getSessionId());
     }
 
     private String safeString(String value) {

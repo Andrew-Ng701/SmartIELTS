@@ -8,7 +8,8 @@ import java.util.List;
 
 @Mapper
 public interface ReadingAnswerRecordMapper {
-    void insertReadingAnswerRecord(ReadingAnswerRecord record);
+
+    int insertReadingAnswerRecord(ReadingAnswerRecord record);
 
     List<ReadingAnswerRecord> findByRecordId(@Param("recordId") Long recordId);
 }

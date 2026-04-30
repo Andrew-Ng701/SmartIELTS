@@ -36,8 +36,5 @@ public class DashboardAskDecisionRequest {
 
     private Map<String, Object> learningContext;
 
-    /**
-     * Backend-resolved authoritative item-level context for question/article/record asks.
-     */
     private Map<String, Object> questionContext;
 }

@@ -1,15 +1,20 @@
-<?xml version="1.0" encoding="UTF-8" ?>
+<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper
         PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
-
 <mapper namespace="com.andrew.smartielts.listening.mapper.ListeningRecordMapper">
 
     <resultMap id="ListeningRecordMap" type="com.andrew.smartielts.listening.domain.pojo.ListeningRecord">
         <id property="id" column="id"/>
         <result property="userId" column="user_id"/>
         <result property="testId" column="test_id"/>
+        <result property="sessionId" column="session_id"/>
         <result property="totalScore" column="total_score"/>
+        <result property="startedTime" column="started_time"/>
+        <result property="submittedTime" column="submitted_time"/>
+        <result property="timeLimitSeconds" column="time_limit_seconds"/>
+        <result property="timeSpentSeconds" column="time_spent_seconds"/>
+        <result property="recordStatus" column="record_status"/>
         <result property="createdTime" column="created_time"/>
         <result property="isDeleted" column="is_deleted"/>
     </resultMap>
@@ -18,7 +23,13 @@
         lr.id,
         lr.user_id,
         lr.test_id,
+        lr.session_id,
         lr.total_score,
+        lr.started_time,
+        lr.submitted_time,
+        lr.time_limit_seconds,
+        lr.time_spent_seconds,
+        lr.record_status,
         lr.created_time,
         lr.is_deleted
     </sql>
@@ -27,7 +38,6 @@
         <where>
             lr.is_deleted = 0
             AND lr.user_id = #{userId}
-
             <if test="query.testId != null">
                 AND lr.test_id = #{query.testId}
             </if>
@@ -56,7 +66,6 @@
     <sql id="AdminActiveWhere">
         <where>
             lr.is_deleted = 0
-
             <if test="query.userId != null">
                 AND lr.user_id = #{query.userId}
             </if>
@@ -87,49 +96,37 @@
     <sql id="UserActiveOrderBy">
         ORDER BY lr.created_time
         <choose>
-            <when test="query.sortDirection != null and query.sortDirection.name() == 'ASC'">
-                ASC
-            </when>
-            <otherwise>
-                DESC
-            </otherwise>
-        </choose>
+            <when test="query.sortDirection != null and query.sortDirection.name() == 'ASC'">ASC</when>
+            <otherwise>DESC</otherwise>
+        </choose>,
+        lr.id DESC
     </sql>
 
     <sql id="UserDeletedOrderBy">
         ORDER BY lr.created_time
         <choose>
-            <when test="query.sortDirection != null and query.sortDirection.name() == 'ASC'">
-                ASC
-            </when>
-            <otherwise>
-                DESC
-            </otherwise>
-        </choose>
+            <when test="query.sortDirection != null and query.sortDirection.name() == 'ASC'">ASC</when>
+            <otherwise>DESC</otherwise>
+        </choose>,
+        lr.id DESC
     </sql>
 
     <sql id="AdminActiveOrderBy">
         ORDER BY lr.created_time
         <choose>
-            <when test="query.sortDirection != null and query.sortDirection.name() == 'ASC'">
-                ASC
-            </when>
-            <otherwise>
-                DESC
-            </otherwise>
-        </choose>
+            <when test="query.sortDirection != null and query.sortDirection.name() == 'ASC'">ASC</when>
+            <otherwise>DESC</otherwise>
+        </choose>,
+        lr.id DESC
     </sql>
 
     <sql id="AdminDeletedOrderBy">
         ORDER BY lr.created_time
         <choose>
-            <when test="query.sortDirection != null and query.sortDirection.name() == 'ASC'">
-                ASC
-            </when>
-            <otherwise>
-                DESC
-            </otherwise>
-        </choose>
+            <when test="query.sortDirection != null and query.sortDirection.name() == 'ASC'">ASC</when>
+            <otherwise>DESC</otherwise>
+        </choose>,
+        lr.id DESC
     </sql>
 
     <select id="countUserActive" resultType="java.lang.Long">
@@ -139,8 +136,7 @@
     </select>
 
     <select id="pageUserActive" resultMap="ListeningRecordMap">
-        SELECT
-        <include refid="ListeningRecordColumns"/>
+        SELECT <include refid="ListeningRecordColumns"/>
         FROM listening_record lr
         <include refid="UserActiveWhere"/>
         <include refid="UserActiveOrderBy"/>
@@ -154,8 +150,7 @@
     </select>
 
     <select id="pageUserDeleted" resultMap="ListeningRecordMap">
-        SELECT
-        <include refid="ListeningRecordColumns"/>
+        SELECT <include refid="ListeningRecordColumns"/>
         FROM listening_record lr
         <include refid="UserDeletedWhere"/>
         <include refid="UserDeletedOrderBy"/>
@@ -169,8 +164,7 @@
     </select>
 
     <select id="pageAdminActive" resultMap="ListeningRecordMap">
-        SELECT
-        <include refid="ListeningRecordColumns"/>
+        SELECT <include refid="ListeningRecordColumns"/>
         FROM listening_record lr
         <include refid="AdminActiveWhere"/>
         <include refid="AdminActiveOrderBy"/>
@@ -184,8 +178,7 @@
     </select>
 
     <select id="pageAdminDeleted" resultMap="ListeningRecordMap">
-        SELECT
-        <include refid="ListeningRecordColumns"/>
+        SELECT <include refid="ListeningRecordColumns"/>
         FROM listening_record lr
         <include refid="AdminDeletedWhere"/>
         <include refid="AdminDeletedOrderBy"/>
@@ -193,34 +186,47 @@
     </select>
 
     <select id="findAnyById" resultMap="ListeningRecordMap">
-        SELECT
-        <include refid="ListeningRecordColumns"/>
+        SELECT <include refid="ListeningRecordColumns"/>
         FROM listening_record lr
         WHERE lr.id = #{id}
         LIMIT 1
     </select>
 
     <select id="findAnyByIdForUser" resultMap="ListeningRecordMap">
-        SELECT
-        <include refid="ListeningRecordColumns"/>
+        SELECT <include refid="ListeningRecordColumns"/>
         FROM listening_record lr
         WHERE lr.id = #{recordId}
         AND lr.user_id = #{userId}
         LIMIT 1
     </select>
 
-    <insert id="insert" parameterType="com.andrew.smartielts.listening.domain.pojo.ListeningRecord"
-            useGeneratedKeys="true" keyProperty="id">
+    <insert id="insert"
+            parameterType="com.andrew.smartielts.listening.domain.pojo.ListeningRecord"
+            useGeneratedKeys="true"
+            keyProperty="id"
+            keyColumn="id">
         INSERT INTO listening_record (
             user_id,
             test_id,
+            session_id,
             total_score,
+            started_time,
+            submitted_time,
+            time_limit_seconds,
+            time_spent_seconds,
+            record_status,
             created_time,
             is_deleted
         ) VALUES (
                      #{userId},
                      #{testId},
+                     #{sessionId},
                      #{totalScore},
+                     #{startedTime},
+                     #{submittedTime},
+                     #{timeLimitSeconds},
+                     #{timeSpentSeconds},
+                     #{recordStatus},
                      #{createdTime},
                      #{isDeleted}
                  )
@@ -262,18 +268,11 @@
           AND is_deleted = 1
     </update>
 
-    <select id="findRecentActiveByUserId"
-            resultType="com.andrew.smartielts.listening.domain.pojo.ListeningRecord">
-        SELECT
-            lr.id,
-            lr.user_id,
-            lr.test_id,
-            lr.total_score,
-            lr.created_time,
-            lr.is_deleted
+    <select id="findRecentActiveByUserId" resultMap="ListeningRecordMap">
+        SELECT <include refid="ListeningRecordColumns"/>
         FROM listening_record lr
         WHERE lr.user_id = #{userId}
-          AND lr.is_deleted = 0
+        AND lr.is_deleted = 0
         ORDER BY lr.created_time DESC, lr.id DESC
         LIMIT #{limit}
     </select>
@@ -285,5 +284,36 @@
           AND is_deleted = 0
           AND total_score IS NOT NULL
     </select>
+
+    <select id="findBySessionIdForUser" resultMap="ListeningRecordMap">
+        SELECT <include refid="ListeningRecordColumns"/>
+        FROM listening_record lr
+        WHERE lr.session_id = #{sessionId}
+        AND lr.user_id = #{userId}
+        LIMIT 1
+    </select>
+
+    <select id="findInProgressByTestIdForUser" resultMap="ListeningRecordMap">
+        SELECT <include refid="ListeningRecordColumns"/>
+        FROM listening_record lr
+        WHERE lr.test_id = #{testId}
+        AND lr.user_id = #{userId}
+        AND lr.is_deleted = 0
+        AND lr.record_status IN ('IN_PROGRESS', 'PAUSED')
+        ORDER BY lr.id DESC
+        LIMIT 1
+    </select>
+
+    <update id="updateSessionState" parameterType="com.andrew.smartielts.listening.domain.pojo.ListeningRecord">
+        UPDATE listening_record
+        SET started_time = #{startedTime},
+            submitted_time = #{submittedTime},
+            time_limit_seconds = #{timeLimitSeconds},
+            time_spent_seconds = #{timeSpentSeconds},
+            record_status = #{recordStatus}
+        WHERE id = #{id}
+    </update>
+
+
 
 </mapper>

@@ -21,9 +21,28 @@ import com.andrew.smartielts.writing.domain.pojo.WritingRecord;
 import com.andrew.smartielts.writing.domain.query.user.UserWritingDeletedRecordPageQuery;
 import com.andrew.smartielts.writing.domain.query.user.UserWritingRecordPageQuery;
 import com.andrew.smartielts.writing.mapper.WritingRecordMapper;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import com.andrew.smartielts.dashboard.agent.DashboardIntentExecutionFacade;
+import com.andrew.smartielts.dashboard.constants.DashboardExecutiveSummaryQueryConstants;
+import com.andrew.smartielts.dashboard.constants.DashboardOverviewConstants;
+import com.andrew.smartielts.dashboard.controller.dto.DashboardAskClientContext;
+import com.andrew.smartielts.dashboard.controller.dto.DashboardAskPreloadedPayload;
+import com.andrew.smartielts.dashboard.controller.dto.DashboardAskRequest;
+import com.andrew.smartielts.dashboard.controller.dto.DashboardAssistantResponse;
+import com.andrew.smartielts.dashboard.domain.vo.UserDashboardOverviewVisualVO;
+import com.andrew.smartielts.dashboard.domain.vo.UserExecutiveSummaryVO;
+import com.andrew.smartielts.dashboard.domain.vo.UserProgressSummaryVO;
+import com.andrew.smartielts.dashboard.preload.DashboardPreloadService;
+import org.springframework.beans.factory.ObjectProvider;
+import com.andrew.smartielts.dashboard.agent.answer.DashboardAnswerComposeService;
+import com.andrew.smartielts.dashboard.agent.answer.dto.DashboardAnswerComposeRequest;
+import com.andrew.smartielts.dashboard.agent.answer.dto.DashboardAnswerComposeResult;
 
+import java.util.Arrays;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
@@ -38,6 +57,10 @@ public class UserDashboardServiceImpl implements UserDashboardService {
     private final ReadingRecordMapper readingRecordMapper;
     private final WritingRecordMapper writingRecordMapper;
     private final SpeakingRecordMapper speakingRecordMapper;
+    private final ObjectProvider<DashboardPreloadService> dashboardPreloadServiceProvider;
+    private final ObjectProvider<DashboardIntentExecutionFacade> executionFacadeProvider;
+    private final ObjectMapper objectMapper;
+    private final DashboardAnswerComposeService dashboardAnswerComposeService;
 
     @Override
     public UserOverviewVO overview(Long userId) {
@@ -167,6 +190,198 @@ public class UserDashboardServiceImpl implements UserDashboardService {
         );
         vo.setGeneratedAt(LocalDateTime.now());
         return vo;
+    }
+
+    @Override
+    public UserDashboardOverviewVisualVO userOverviewVisual(Long userId, String timeRange) {
+        DashboardAskPreloadedPayload payload = loadUserOverviewPayload(userId, timeRange);
+
+        return UserDashboardOverviewVisualVO.builder()
+                .snapshotId(payload.getSnapshotId())
+                .snapshotTime(payload.getSnapshotTime())
+                .overview(payload.getOverview())
+                .progressSummary(payload.getProgressSummary())
+                .recentRecords(payload.getRecentRecords())
+                .moduleStats(payload.getModuleStats())
+                .aggregates(payload.getAggregates())
+                .scoreRadarChart(buildUserScoreRadarChart(payload))
+                .scoreTrendChart(buildUserScoreTrendChart(payload))
+                .build();
+    }
+
+    @Override
+    public UserExecutiveSummaryVO userExecutiveSummary(Long userId, String timeRange) {
+        DashboardAskPreloadedPayload payload = loadUserOverviewPayload(userId, timeRange);
+
+        String query = DashboardExecutiveSummaryQueryConstants.USER_EXECUTIVE_SUMMARY_DEFAULT_QUERY;
+        String summaryText = composeExecutiveSummary(
+                DashboardOverviewConstants.ROLE_USER,
+                userId,
+                userId,
+                query,
+                "user_executive_summary",
+                payload
+        );
+
+        if (!hasText(summaryText)) {
+            summaryText = buildUserExecutiveSummaryText(payload, timeRange);
+        }
+
+        Map<String, Object> meta = new LinkedHashMap<>();
+        meta.put("summary_source", "preloaded_payload_compose");
+        meta.put("time_range", timeRange);
+        meta.put("has_progress_summary", payload.getProgressSummary() != null);
+        meta.put("module_stat_count", payload.getModuleStats() == null ? 0 : payload.getModuleStats().size());
+        meta.put("recent_record_count", payload.getRecentRecords() == null ? 0 : payload.getRecentRecords().size());
+
+        return UserExecutiveSummaryVO.builder()
+                .snapshotId(payload.getSnapshotId())
+                .snapshotTime(payload.getSnapshotTime())
+                .summaryType(DashboardOverviewConstants.SUMMARY_TYPE_AI)
+                .summaryText(summaryText)
+                .summarySentences(splitSummarySentences(summaryText))
+                .queryUsed(query)
+                .meta(meta)
+                .build();
+    }
+
+    private DashboardAskPreloadedPayload loadUserOverviewPayload(Long userId, String timeRange) {
+        Map<String, Object> context = new LinkedHashMap<>();
+        context.put(DashboardOverviewConstants.CONTEXT_KEY_TIME_RANGE, timeRange);
+
+        return dashboardPreloadServiceProvider.getObject().preload(
+                DashboardOverviewConstants.ROLE_USER,
+                userId,
+                userId,
+                DashboardOverviewConstants.PAGE_NAME_USER_OVERVIEW,
+                null,
+                context
+        );
+    }
+
+    private String composeExecutiveSummary(
+            String role,
+            Long operatorUserId,
+            Long targetUserId,
+            String query,
+            String pageName,
+            DashboardAskPreloadedPayload payload) {
+
+        Map<String, Object> data = new LinkedHashMap<>();
+        putIfPresent(data, "query", query);
+        putIfPresent(data, "askScene", DashboardOverviewConstants.ASK_SCENE_CHAT);
+        putIfPresent(data, "responseMode", DashboardOverviewConstants.RESPONSE_MODE_DEFAULT);
+        putIfPresent(data, "preloadedPayload", payload);
+
+        if (payload != null) {
+            putIfPresent(data, "overview", payload.getOverview());
+            putIfPresent(data, "progressSummary", payload.getProgressSummary());
+            putIfPresent(data, "recentRecords", payload.getRecentRecords());
+            putIfPresent(data, "moduleStats", payload.getModuleStats());
+            putIfPresent(data, "recentQuestions", payload.getRecentQuestions());
+            putIfPresent(data, "recentPassages", payload.getRecentPassages());
+            putIfPresent(data, "aggregates", payload.getAggregates());
+        }
+
+        Map<String, Object> filters = new LinkedHashMap<>();
+        filters.put("pageName", pageName);
+        filters.put("summaryType", "executive_summary");
+        filters.put("tone", "warm_teacher");
+        filters.put("timeRange", DashboardOverviewConstants.DEFAULT_TIME_RANGE);
+
+        DashboardAnswerComposeResult result = dashboardAnswerComposeService.compose(
+                DashboardAnswerComposeRequest.builder()
+                        .role(role)
+                        .operatorUserId(operatorUserId)
+                        .targetUserId(targetUserId)
+                        .originalQuery(query)
+                        .capability("PRELOADED_DIRECT")
+                        .filters(filters)
+                        .data(data)
+                        .responseLanguage(DashboardOverviewConstants.RESPONSE_LANGUAGE_ZH_HANT)
+                        .build()
+        );
+
+        return result == null || result.getAnswer() == null ? null : result.getAnswer().trim();
+    }
+
+    private void putIfPresent(Map<String, Object> target, String key, Object value) {
+        if (target == null || key == null || key.isBlank() || value == null) {
+            return;
+        }
+        if (value instanceof String text) {
+            if (!text.isBlank()) {
+                target.put(key, text.trim());
+            }
+            return;
+        }
+        if (value instanceof List<?> list && list.isEmpty()) {
+            return;
+        }
+        if (value instanceof Map<?, ?> map && map.isEmpty()) {
+            return;
+        }
+        target.put(key, value);
+    }
+
+    private DashboardAskRequest buildUserExecutiveSummaryRequest(Long userId,
+                                                                 String timeRange,
+                                                                 DashboardAskPreloadedPayload payload) {
+        DashboardAskRequest request = new DashboardAskRequest();
+        request.setTargetUserId(userId);
+        request.setQuery(DashboardExecutiveSummaryQueryConstants.USER_EXECUTIVE_SUMMARY_DEFAULT_QUERY);
+        request.setAskScene(DashboardOverviewConstants.ASK_SCENE_CHAT);
+        request.setResponseMode(DashboardOverviewConstants.RESPONSE_MODE_DEFAULT);
+        request.setPreloadedPayload(payload);
+
+        Map<String, Object> context = new LinkedHashMap<>();
+        context.put(DashboardOverviewConstants.CONTEXT_KEY_TIME_RANGE, timeRange);
+        request.setContext(context);
+
+        DashboardAskClientContext clientContext = new DashboardAskClientContext();
+        clientContext.setPageName(DashboardOverviewConstants.PAGE_NAME_USER_OVERVIEW);
+        clientContext.setRoute("/smartielts/dashboard/user/overview_visual");
+        clientContext.setTab("overview");
+        clientContext.setLocale(DashboardOverviewConstants.RESPONSE_LANGUAGE_ZH_HANT);
+        request.setClientContext(clientContext);
+
+        return request;
+    }
+
+    private Map<String, Object> buildUserScoreRadarChart(DashboardAskPreloadedPayload payload) {
+        Map<String, Object> map = new LinkedHashMap<>();
+        map.put("chart_type", "radar");
+
+        if (payload.getProgressSummary() instanceof UserProgressSummaryVO vo) {
+            map.put("indicators", java.util.List.of("listening", "reading", "writing", "speaking"));
+            map.put("values", java.util.List.of(
+                    vo.getListeningAverageScore(),
+                    vo.getReadingAverageScore(),
+                    vo.getWritingAverageScore(),
+                    vo.getSpeakingAverageScore()
+            ));
+        } else {
+            map.put("indicators", java.util.List.of());
+            map.put("values", java.util.List.of());
+        }
+        return map;
+    }
+
+    private Map<String, Object> buildUserScoreTrendChart(DashboardAskPreloadedPayload payload) {
+        Map<String, Object> map = new LinkedHashMap<>();
+        map.put("chartType", "line");
+        map.put("xKey", "createdTime");
+        map.put("yKey", "score");
+        map.put("rows", payload.getRecentRecords() == null ? List.of() : payload.getRecentRecords());
+        return map;
+    }
+
+    private Map<String, Object> buildSummaryMeta(DashboardAssistantResponse response) {
+        Map<String, Object> meta = new LinkedHashMap<>();
+        meta.put("summarySource", DashboardOverviewConstants.SUMMARY_SOURCE_PRELOAD_PLUS_ASK);
+        meta.put("suggestions", response == null ? List.of() : response.getSuggestions());
+        meta.put("answerMeta", response == null ? Map.of() : response.getMeta());
+        return meta;
     }
 
     private BigDecimal averageListeningScore(Long userId) {
@@ -344,5 +559,159 @@ public class UserDashboardServiceImpl implements UserDashboardService {
             list.add(vo);
         }
         return list;
+    }
+
+    private String buildUserExecutiveSummaryText(DashboardAskPreloadedPayload payload, String timeRange) {
+        Map<String, Object> progress = toMap(payload.getProgressSummary());
+        List<Map<String, Object>> moduleStats = toListOfMap(payload.getModuleStats());
+
+        String overallAvg = firstNonBlank(
+                getString(progress, "overallAverage"),
+                getString(progress, "averageScore"),
+                getString(progress, "avgScore"),
+                getString(progress, "overall_score")
+        );
+
+        WeakModule weak = findWeakestModule(moduleStats);
+
+        List<String> parts = new ArrayList<>();
+
+        if (hasText(overallAvg)) {
+            parts.add("最近 30 天整體平均約為 " + overallAvg + "。");
+        } else {
+            parts.add("最近 30 天已有學習紀錄，整體表現可持續追蹤。");
+        }
+
+        if (weak != null && hasText(weak.moduleName)) {
+            parts.add("目前相對較弱的模組是 " + weak.moduleName + "。");
+            parts.add("建議下一步優先集中練習 " + weak.moduleName + "，先把弱項穩定下來。");
+        } else {
+            parts.add("目前各模組差距尚不明顯。");
+            parts.add("建議下一步優先增加近期作答量，讓系統能更準確辨識弱項。");
+        }
+
+        return String.join("", parts);
+    }
+
+    private WeakModule findWeakestModule(List<Map<String, Object>> rows) {
+        WeakModule result = null;
+        for (Map<String, Object> row : rows) {
+            String moduleName = firstNonBlank(
+                    getString(row, "module"),
+                    getString(row, "moduleName"),
+                    getString(row, "name")
+            );
+            Double score = firstNumber(
+                    row.get("avgScore"),
+                    row.get("averageScore"),
+                    row.get("score"),
+                    row.get("overallAverage"),
+                    row.get("overall_score")
+            );
+            if (!hasText(moduleName) || score == null) {
+                continue;
+            }
+            if (result == null || score < result.score) {
+                result = new WeakModule(moduleName, score);
+            }
+        }
+        return result;
+    }
+
+    private Map<String, Object> toMap(Object value) {
+        if (value == null) {
+            return Map.of();
+        }
+        if (value instanceof Map<?, ?> map) {
+            Map<String, Object> result = new LinkedHashMap<>();
+            map.forEach((k, v) -> result.put(String.valueOf(k), v));
+            return result;
+        }
+        return objectMapper.convertValue(value, new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
+    }
+
+    private List<Map<String, Object>> toListOfMap(Object value) {
+        if (value == null) {
+            return List.of();
+        }
+        if (value instanceof List<?> list) {
+            List<Map<String, Object>> result = new ArrayList<>();
+            for (Object item : list) {
+                result.add(toMap(item));
+            }
+            return result;
+        }
+        return List.of();
+    }
+
+    private String getString(Map<String, Object> map, String key) {
+        if (map == null || map.isEmpty() || key == null) {
+            return null;
+        }
+        Object value = map.get(key);
+        return value == null ? null : String.valueOf(value).trim();
+    }
+
+    private String firstNonBlank(String... values) {
+        if (values == null) {
+            return null;
+        }
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value.trim();
+            }
+        }
+        return null;
+    }
+
+    private Double firstNumber(Object... values) {
+        if (values == null) {
+            return null;
+        }
+        for (Object value : values) {
+            Double parsed = toDouble(value);
+            if (parsed != null) {
+                return parsed;
+            }
+        }
+        return null;
+    }
+
+    private Double toDouble(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof Number number) {
+            return number.doubleValue();
+        }
+        try {
+            return Double.parseDouble(String.valueOf(value).trim());
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
+    }
+
+    private List<String> splitSummarySentences(String text) {
+        if (text == null || text.isBlank()) {
+            return List.of();
+        }
+        return Arrays.stream(text.split("[。！？!?\\n]+"))
+                .map(String::trim)
+                .filter(s -> !s.isBlank())
+                .toList();
+    }
+
+    private static class WeakModule {
+        private final String moduleName;
+        private final Double score;
+
+        private WeakModule(String moduleName, Double score) {
+            this.moduleName = moduleName;
+            this.score = score;
+        }
     }
 }

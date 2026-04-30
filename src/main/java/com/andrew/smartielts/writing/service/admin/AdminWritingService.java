@@ -1,24 +1,24 @@
 package com.andrew.smartielts.writing.service.admin;
 
 import com.andrew.smartielts.common.page.PageResult;
-import com.andrew.smartielts.writing.domain.pojo.WritingQuestion;
+import com.andrew.smartielts.writing.domain.dto.WritingQuestionDTO;
 import com.andrew.smartielts.writing.domain.query.admin.AdminWritingDeletedRecordPageQuery;
 import com.andrew.smartielts.writing.domain.query.admin.AdminWritingRecordPageQuery;
+import com.andrew.smartielts.writing.domain.vo.WritingQuestionVO;
 import com.andrew.smartielts.writing.domain.vo.WritingRecordDetailVO;
 import com.andrew.smartielts.writing.domain.vo.WritingRecordVO;
-import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 
 public interface AdminWritingService {
 
-    WritingQuestion createQuestion(String taskType, String title, String description, MultipartFile image);
+    WritingQuestionVO createQuestion(WritingQuestionDTO dto);
 
-    List<WritingQuestion> listQuestions();
+    List<WritingQuestionVO> listQuestions();
 
-    WritingQuestion getQuestion(Long id);
+    WritingQuestionVO getQuestion(Long id);
 
-    WritingQuestion updateQuestion(Long id, String taskType, String title, String description, MultipartFile image);
+    WritingQuestionVO updateQuestion(Long id, WritingQuestionDTO dto);
 
     void deleteQuestion(Long id);
 

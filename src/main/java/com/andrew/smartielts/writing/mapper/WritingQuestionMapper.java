@@ -24,4 +24,6 @@ public interface WritingQuestionMapper {
                            @Param("deletedTime") LocalDateTime deletedTime);
 
     void restoreById(@Param("id") Long id);
+
+    List<WritingQuestion> findNeedImageMigration();
 }

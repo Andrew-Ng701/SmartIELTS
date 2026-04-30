@@ -9,7 +9,15 @@ public class ListeningRecord {
     private Long id;
     private Long userId;
     private Long testId;
+
+    private String sessionId;
     private Integer totalScore;
-    private Integer isDeleted;
+    private LocalDateTime startedTime;
+    private LocalDateTime submittedTime;
+    private Integer timeLimitSeconds;
+    private Integer timeSpentSeconds;
+    private String recordStatus;
+
     private LocalDateTime createdTime;
+    private Integer isDeleted;
 }

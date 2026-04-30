@@ -9,7 +9,6 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -24,8 +23,11 @@ import java.math.BigDecimal;
 @SecurityRequirement(name = "bearerAuth")
 public class UserWritingController {
 
-    @Autowired
-    private UserWritingService userWritingService;
+    private final UserWritingService userWritingService;
+
+    public UserWritingController(UserWritingService userWritingService) {
+        this.userWritingService = userWritingService;
+    }
 
     @Operation(summary = "List all writing questions")
     @GetMapping("/questions")
@@ -50,7 +52,16 @@ public class UserWritingController {
                             @RequestParam(value = "textContent", required = false) String textContent,
                             @RequestParam(value = "images", required = false) MultipartFile[] images,
                             @RequestParam(value = "pdf", required = false) MultipartFile pdf) {
-        return Result.success(userWritingService.submitRecord(questionId, targetScore, textContent, images, pdf));
+        return Result.success(
+                userWritingService.submitRecord(questionId, targetScore, textContent, images, pdf)
+        );
+    }
+
+    @Operation(summary = "List my writing records")
+    @GetMapping("/records")
+    public Result<?> listMyRecords() {
+        Long userId = SecurityUtils.getCurrentUserId();
+        return Result.success(userWritingService.listMyRecords(userId));
     }
 
     @Operation(summary = "Get writing record detail")

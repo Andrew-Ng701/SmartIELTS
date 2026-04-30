@@ -5,9 +5,13 @@ import org.springframework.web.multipart.MultipartFile;
 
 @Data
 public class ListeningCreateTestForm {
-
     private String title;
     private Integer totalScore;
     private MultipartFile file;
     private String transcriptText;
+
+    private String timerMode;
+    private Integer totalSeconds;
+    private Integer autoSubmit;
+    private Integer allowPause;
 }

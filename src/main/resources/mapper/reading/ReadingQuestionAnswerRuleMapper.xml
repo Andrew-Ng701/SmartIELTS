@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.andrew.smartielts.reading.mapper.ReadingQuestionAnswerRuleMapper">
+
+    <resultMap id="BaseMap" type="com.andrew.smartielts.common.domain.pojo.QuestionAnswerRule">
+        <id column="id" property="id"/>
+        <result column="question_id" property="questionId"/>
+        <result column="blank_no" property="blankNo"/>
+        <result column="answer_group_no" property="answerGroupNo"/>
+        <result column="answer_text" property="answerText"/>
+        <result column="normalized_answer" property="normalizedAnswer"/>
+        <result column="is_primary" property="isPrimary"/>
+        <result column="display_order" property="displayOrder"/>
+    </resultMap>
+
+    <insert id="insertReadingQuestionAnswerRule"
+            parameterType="com.andrew.smartielts.common.domain.pojo.QuestionAnswerRule"
+            useGeneratedKeys="true"
+            keyProperty="id">
+        insert into reading_question_answer_rule (
+            question_id, blank_no, answer_group_no, answer_text,
+            normalized_answer, is_primary, display_order
+        ) values (
+                     #{questionId}, #{blankNo}, #{answerGroupNo}, #{answerText},
+                     #{normalizedAnswer}, #{isPrimary}, #{displayOrder}
+                 )
+    </insert>
+
+    <select id="findById" resultMap="BaseMap">
+        select *
+        from reading_question_answer_rule
+        where id = #{id}
+        limit 1
+    </select>
+
+    <select id="findByQuestionId" resultMap="BaseMap">
+        select *
+        from reading_question_answer_rule
+        where question_id = #{questionId}
+        order by blank_no asc, answer_group_no asc, display_order asc, id asc
+    </select>
+
+    <delete id="deleteById">
+        delete from reading_question_answer_rule
+        where id = #{id}
+    </delete>
+
+    <delete id="deleteByQuestionId">
+        delete from reading_question_answer_rule
+        where question_id = #{questionId}
+    </delete>
+</mapper>

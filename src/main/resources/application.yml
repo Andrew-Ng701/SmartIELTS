@@ -58,6 +58,9 @@ aliyun:
       speaking-audio:
         bucket-name: ${ALIYUN_OSS_BUCKET_SPEAKING_AUDIO}
         domain: ${ALIYUN_OSS_DOMAIN_SPEAKING_AUDIO}
+      question-group-image:
+        bucket-name: ${ALIYUN_OSS_BUCKET_QUESTION_GROUP_IMAGE}
+        domain: ${ALIYUN_OSS_DOMAIN_QUESTION_GROUP_IMAGE}
 
   ocr:
     access-key-id: ${ALIYUN_OCR_ACCESS_KEY_ID:}
@@ -69,7 +72,7 @@ aliyun:
       llm:
         base-url: ${ALIYUN_AI_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}
         api-key: ${ALIYUN_AI_API_KEY:}
-        model: ${WRITING_SCORE_AI_MODEL:qwen3.5-flash}
+        model: ${WRITING_SCORE_AI_MODEL:qwen3.6-plus}
         connect-timeout-ms: 100000000
         read-timeout-ms: 30000000
     listening-asr:

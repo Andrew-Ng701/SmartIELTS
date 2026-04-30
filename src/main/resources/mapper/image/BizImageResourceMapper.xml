@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.andrew.smartielts.common.mapper.BizImageResourceMapper">
+
+    <resultMap id="BaseMap" type="com.andrew.smartielts.common.domain.pojo.BizImageResource">
+        <id column="id" property="id"/>
+        <result column="target_type" property="targetType"/>
+        <result column="target_id" property="targetId"/>
+        <result column="bucket_type" property="bucketType"/>
+        <result column="biz_path" property="bizPath"/>
+        <result column="file_url" property="fileUrl"/>
+        <result column="object_key" property="objectKey"/>
+        <result column="original_name" property="originalName"/>
+        <result column="content_type" property="contentType"/>
+        <result column="file_size" property="fileSize"/>
+        <result column="width" property="width"/>
+        <result column="height" property="height"/>
+        <result column="sort_order" property="sortOrder"/>
+        <result column="created_time" property="createdTime"/>
+        <result column="is_deleted" property="isDeleted"/>
+    </resultMap>
+
+    <sql id="BaseColumnList">
+        id,
+        target_type,
+        target_id,
+        bucket_type,
+        biz_path,
+        file_url,
+        object_key,
+        original_name,
+        content_type,
+        file_size,
+        width,
+        height,
+        sort_order,
+        created_time,
+        is_deleted
+    </sql>
+
+    <insert id="insert"
+            parameterType="com.andrew.smartielts.common.domain.pojo.BizImageResource"
+            useGeneratedKeys="true"
+            keyProperty="id"
+            keyColumn="id">
+        INSERT INTO biz_image_resource (
+        target_type,
+        target_id,
+        bucket_type,
+        biz_path,
+        file_url,
+        object_key,
+        original_name,
+        content_type,
+        file_size,
+        width,
+        height,
+        sort_order,
+        created_time,
+        is_deleted
+        ) VALUES (
+        #{targetType},
+        #{targetId},
+        #{bucketType},
+        #{bizPath},
+        #{fileUrl},
+        #{objectKey},
+        #{originalName},
+        #{contentType},
+        #{fileSize},
+        #{width},
+        #{height},
+        #{sortOrder},
+        #{createdTime},
+        0
+        )
+    </insert>
+
+    <select id="findActiveByTarget" resultMap="BaseMap">
+        SELECT <include refid="BaseColumnList"/>
+        FROM biz_image_resource
+        WHERE target_type = #{targetType}
+        AND target_id = #{targetId}
+        AND is_deleted = 0
+        ORDER BY sort_order ASC, id ASC
+    </select>
+
+    <select id="findActiveByTargets" resultMap="BaseMap">
+        SELECT <include refid="BaseColumnList"/>
+        FROM biz_image_resource
+        WHERE target_type = #{targetType}
+        AND is_deleted = 0
+        AND target_id IN
+        <foreach collection="targetIds" item="targetId" open="(" separator="," close=")">
+            #{targetId}
+        </foreach>
+        ORDER BY target_id ASC, sort_order ASC, id ASC
+    </select>
+
+    <update id="softDeleteByTarget">
+        UPDATE biz_image_resource
+        SET is_deleted = 1
+        WHERE target_type = #{targetType}
+        AND target_id = #{targetId}
+        AND is_deleted = 0
+    </update>
+
+</mapper>

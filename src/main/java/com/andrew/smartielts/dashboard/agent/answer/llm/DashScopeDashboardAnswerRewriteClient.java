@@ -104,7 +104,7 @@ public class DashScopeDashboardAnswerRewriteClient implements DashboardAnswerRew
 
     private ResponseFormat buildResponseFormat() {
         JsonSchema jsonSchema = new JsonSchema();
-        jsonSchema.setName("dashboardanswerrewrite");
+        jsonSchema.setName("dashboard_answer_rewrite");
         jsonSchema.setSchema(Map.of(
                 "type", "object",
                 "additionalProperties", false,

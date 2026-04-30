@@ -28,9 +28,27 @@ import com.andrew.smartielts.writing.domain.query.admin.AdminWritingRecordPageQu
 import com.andrew.smartielts.writing.domain.query.user.UserWritingDeletedRecordPageQuery;
 import com.andrew.smartielts.writing.domain.query.user.UserWritingRecordPageQuery;
 import com.andrew.smartielts.writing.mapper.WritingRecordMapper;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import com.andrew.smartielts.dashboard.agent.DashboardIntentExecutionFacade;
+import com.andrew.smartielts.dashboard.constants.DashboardExecutiveSummaryQueryConstants;
+import com.andrew.smartielts.dashboard.constants.DashboardOverviewConstants;
+import com.andrew.smartielts.dashboard.controller.dto.DashboardAskClientContext;
+import com.andrew.smartielts.dashboard.controller.dto.DashboardAskPreloadedPayload;
+import com.andrew.smartielts.dashboard.controller.dto.DashboardAskRequest;
+import com.andrew.smartielts.dashboard.controller.dto.DashboardAssistantResponse;
+import com.andrew.smartielts.dashboard.domain.vo.AdminDashboardOverviewVisualVO;
+import com.andrew.smartielts.dashboard.domain.vo.AdminExecutiveSummaryVO;
+import com.andrew.smartielts.dashboard.preload.DashboardPreloadService;
+import org.springframework.beans.factory.ObjectProvider;
+import com.andrew.smartielts.dashboard.agent.answer.DashboardAnswerComposeService;
+import com.andrew.smartielts.dashboard.agent.answer.dto.DashboardAnswerComposeRequest;
+import com.andrew.smartielts.dashboard.agent.answer.dto.DashboardAnswerComposeResult;
 
+import java.util.Arrays;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
@@ -46,6 +64,10 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
     private final ReadingRecordMapper readingRecordMapper;
     private final WritingRecordMapper writingRecordMapper;
     private final SpeakingRecordMapper speakingRecordMapper;
+    private final ObjectProvider<DashboardPreloadService> dashboardPreloadServiceProvider;
+    private final ObjectProvider<DashboardIntentExecutionFacade> executionFacadeProvider;
+    private final ObjectMapper objectMapper;
+    private final DashboardAnswerComposeService dashboardAnswerComposeService;
 
     @Override
     public AdminOverviewVO overview() {
@@ -264,6 +286,128 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
         return list;
     }
 
+    @Override
+    public AdminDashboardOverviewVisualVO adminOverviewVisual(Long operatorUserId, Long targetUserId, String timeRange) {
+        DashboardAskPreloadedPayload payload = loadAdminOverviewPayload(operatorUserId, targetUserId, timeRange);
+
+        return AdminDashboardOverviewVisualVO.builder()
+                .snapshotId(payload.getSnapshotId())
+                .snapshotTime(payload.getSnapshotTime())
+                .overview(payload.getOverview())
+                .moduleStats(payload.getModuleStats())
+                .recentRecords(payload.getRecentRecords())
+                .aggregates(payload.getAggregates())
+                .moduleBarChart(buildAdminModuleBarChart(payload))
+                .moduleDonutChart(buildAdminModuleDonutChart(payload))
+                .build();
+    }
+
+    @Override
+    public AdminExecutiveSummaryVO adminExecutiveSummary(Long operatorUserId, Long targetUserId, String timeRange) {
+        DashboardAskPreloadedPayload payload = loadAdminOverviewPayload(operatorUserId, targetUserId, timeRange);
+
+        String query = DashboardExecutiveSummaryQueryConstants.ADMIN_EXECUTIVE_SUMMARY_DEFAULT_QUERY;
+        String summaryText = composeExecutiveSummary(
+                DashboardOverviewConstants.ROLE_ADMIN,
+                operatorUserId,
+                targetUserId,
+                query,
+                "admin_executive_summary",
+                payload
+        );
+
+        if (!hasText(summaryText)) {
+            summaryText = buildAdminExecutiveSummaryText(payload, timeRange, targetUserId);
+        }
+
+        Map<String, Object> meta = new LinkedHashMap<>();
+        meta.put("summary_source", "preloaded_payload_compose");
+        meta.put("time_range", timeRange);
+        meta.put("target_user_id", targetUserId);
+        meta.put("has_overview", payload.getOverview() != null);
+        meta.put("has_progress_summary", payload.getProgressSummary() != null);
+        meta.put("module_stat_count", payload.getModuleStats() == null ? 0 : payload.getModuleStats().size());
+        meta.put("recent_record_count", payload.getRecentRecords() == null ? 0 : payload.getRecentRecords().size());
+
+        return AdminExecutiveSummaryVO.builder()
+                .snapshotId(payload.getSnapshotId())
+                .snapshotTime(payload.getSnapshotTime())
+                .summaryType(DashboardOverviewConstants.SUMMARY_TYPE_AI)
+                .summaryText(summaryText)
+                .summarySentences(splitSummarySentences(summaryText))
+                .queryUsed(query)
+                .meta(meta)
+                .build();
+    }
+
+    private DashboardAskPreloadedPayload loadAdminOverviewPayload(Long operatorUserId, Long targetUserId, String timeRange) {
+        Map<String, Object> context = new LinkedHashMap<>();
+        context.put(DashboardOverviewConstants.CONTEXT_KEY_TIME_RANGE, timeRange);
+
+        return dashboardPreloadServiceProvider.getObject().preload(
+                DashboardOverviewConstants.ROLE_ADMIN,
+                operatorUserId,
+                targetUserId,
+                DashboardOverviewConstants.PAGE_NAME_ADMIN_OVERVIEW,
+                null,
+                context
+        );
+    }
+
+    private DashboardAskRequest buildAdminExecutiveSummaryRequest(Long targetUserId,
+                                                                  String timeRange,
+                                                                  DashboardAskPreloadedPayload payload) {
+        DashboardAskRequest request = new DashboardAskRequest();
+        request.setTargetUserId(targetUserId);
+        request.setQuery(DashboardExecutiveSummaryQueryConstants.ADMIN_EXECUTIVE_SUMMARY_DEFAULT_QUERY);
+        request.setAskScene(DashboardOverviewConstants.ASK_SCENE_CHAT);
+        request.setResponseMode(DashboardOverviewConstants.RESPONSE_MODE_DEFAULT);
+        request.setPreloadedPayload(payload);
+
+        Map<String, Object> context = new LinkedHashMap<>();
+        context.put(DashboardOverviewConstants.CONTEXT_KEY_TIME_RANGE, timeRange);
+        request.setContext(context);
+
+        DashboardAskClientContext clientContext = new DashboardAskClientContext();
+        clientContext.setPageName(DashboardOverviewConstants.PAGE_NAME_ADMIN_OVERVIEW);
+        clientContext.setRoute("/smartielts/dashboard/admin/overview_visual");
+        clientContext.setTab("overview");
+        clientContext.setLocale(DashboardOverviewConstants.RESPONSE_LANGUAGE_ZH_HANT);
+        request.setClientContext(clientContext);
+
+        return request;
+    }
+
+    private Map<String, Object> buildAdminModuleBarChart(DashboardAskPreloadedPayload payload) {
+        Map<String, Object> map = new LinkedHashMap<>();
+        map.put("chart_type", "bar");
+        map.put("dimension_key", "module");
+        map.put("x_key", "module");
+        map.put("series", Arrays.asList(
+                Map.of("name", "active_count", "field", "activeCount"),
+                Map.of("name", "deleted_count", "field", "deletedCount")
+        ));
+        map.put("rows", payload.getModuleStats());
+        return map;
+    }
+
+    private Map<String, Object> buildAdminModuleDonutChart(DashboardAskPreloadedPayload payload) {
+        Map<String, Object> map = new LinkedHashMap<>();
+        map.put("chart_type", "donut");
+        map.put("dimension_key", "module");
+        map.put("value_formula", "activeCount + deletedCount");
+        map.put("rows", payload.getModuleStats());
+        return map;
+    }
+
+    private Map<String, Object> buildSummaryMeta(DashboardAssistantResponse response) {
+        Map<String, Object> meta = new LinkedHashMap<>();
+        meta.put("summarySource", DashboardOverviewConstants.SUMMARY_SOURCE_PRELOAD_PLUS_ASK);
+        meta.put("suggestions", response == null ? List.of() : response.getSuggestions());
+        meta.put("answerMeta", response == null ? Map.of() : response.getMeta());
+        return meta;
+    }
+
     private BigDecimal averageListeningScore(Long userId) {
         return listeningRecordMapper.selectUserAverageScore(userId);
     }
@@ -325,5 +469,278 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
         }
 
         return sum.divide(BigDecimal.valueOf(count), 2, RoundingMode.HALF_UP);
+    }
+
+    private String buildAdminExecutiveSummaryText(DashboardAskPreloadedPayload payload, String timeRange, Long targetUserId) {
+        Map<String, Object> overview = toMap(payload.getOverview());
+        Map<String, Object> progress = toMap(payload.getProgressSummary());
+        Map<String, Object> aggregates = toMap(payload.getAggregates());
+        List<Map<String, Object>> moduleStats = toListOfMap(payload.getModuleStats());
+        List<Map<String, Object>> recentRecords = toListOfMap(payload.getRecentRecords());
+
+        String overallAvg = firstNonBlank(
+                getString(progress, "overallAverage"),
+                getString(progress, "averageScore"),
+                getString(progress, "avgScore"),
+                getString(progress, "overall_score"),
+                getString(overview, "overallAverage"),
+                getString(overview, "averageScore"),
+                getString(overview, "avgScore")
+        );
+
+        Integer recentRecordCount = firstInteger(
+                aggregates.get("recentRecordCount"),
+                recentRecords.size()
+        );
+
+        WeakModule weak = findWeakestModule(moduleStats);
+
+        List<String> parts = new ArrayList<>();
+        parts.add("目前管理視角已載入指定用戶的 dashboard 摘要資料。");
+
+        if (hasText(overallAvg)) {
+            parts.add("最近 30 天整體平均約為 " + overallAvg + "。");
+        } else {
+            parts.add("最近 30 天已有資料可供追蹤，但整體平均欄位尚未明確提供。");
+        }
+
+        if (recentRecordCount != null) {
+            parts.add("近期可用作答紀錄約 " + recentRecordCount + " 筆。");
+        }
+
+        if (weak != null && hasText(weak.moduleName)) {
+            parts.add("目前相對需要優先關注的弱項模組為 " + weak.moduleName + "，建議先針對該模組安排補強。");
+        } else {
+            parts.add("目前模組弱項尚不明顯，建議先增加近期紀錄或補齊模組統計。");
+        }
+
+        return joinTopSentences(parts, 4);
+    }
+
+    private WeakModule findWeakestModule(List<Map<String, Object>> rows) {
+        WeakModule result = null;
+        for (Map<String, Object> row : rows) {
+            String moduleName = firstNonBlank(
+                    getString(row, "module"),
+                    getString(row, "moduleName"),
+                    getString(row, "name")
+            );
+            Double score = firstNumber(
+                    row.get("avgScore"),
+                    row.get("averageScore"),
+                    row.get("score"),
+                    row.get("overallAverage"),
+                    row.get("overall_score")
+            );
+            if (!hasText(moduleName) || score == null) {
+                continue;
+            }
+            if (result == null || score < result.score) {
+                result = new WeakModule(moduleName, score);
+            }
+        }
+        return result;
+    }
+
+    private String joinTopSentences(List<String> parts, int maxCount) {
+        if (parts == null || parts.isEmpty()) {
+            return "目前已有摘要資料，但可用資訊仍有限。";
+        }
+        return parts.stream()
+                .filter(this::hasText)
+                .limit(maxCount)
+                .collect(java.util.stream.Collectors.joining(""));
+    }
+
+    private Map<String, Object> toMap(Object value) {
+        if (value == null) {
+            return Map.of();
+        }
+        if (value instanceof Map<?, ?> map) {
+            Map<String, Object> result = new LinkedHashMap<>();
+            map.forEach((k, v) -> result.put(String.valueOf(k), v));
+            return result;
+        }
+        return objectMapper.convertValue(
+                value,
+                new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {}
+        );
+    }
+
+    private List<Map<String, Object>> toListOfMap(Object value) {
+        if (value == null) {
+            return List.of();
+        }
+        if (value instanceof List<?> list) {
+            List<Map<String, Object>> result = new ArrayList<>();
+            for (Object item : list) {
+                result.add(toMap(item));
+            }
+            return result;
+        }
+        return List.of();
+    }
+
+    private String getString(Map<String, Object> map, String key) {
+        if (map == null || map.isEmpty() || key == null) {
+            return null;
+        }
+        Object value = map.get(key);
+        return value == null ? null : String.valueOf(value).trim();
+    }
+
+    private String composeExecutiveSummary(
+            String role,
+            Long operatorUserId,
+            Long targetUserId,
+            String query,
+            String pageName,
+            DashboardAskPreloadedPayload payload) {
+
+        Map<String, Object> data = new LinkedHashMap<>();
+        putIfPresent(data, "query", query);
+        putIfPresent(data, "askScene", DashboardOverviewConstants.ASK_SCENE_CHAT);
+        putIfPresent(data, "responseMode", DashboardOverviewConstants.RESPONSE_MODE_DEFAULT);
+        putIfPresent(data, "preloadedPayload", payload);
+
+        if (payload != null) {
+            putIfPresent(data, "overview", payload.getOverview());
+            putIfPresent(data, "progressSummary", payload.getProgressSummary());
+            putIfPresent(data, "recentRecords", payload.getRecentRecords());
+            putIfPresent(data, "moduleStats", payload.getModuleStats());
+            putIfPresent(data, "recentQuestions", payload.getRecentQuestions());
+            putIfPresent(data, "recentPassages", payload.getRecentPassages());
+            putIfPresent(data, "aggregates", payload.getAggregates());
+        }
+
+        Map<String, Object> filters = new LinkedHashMap<>();
+        filters.put("pageName", pageName);
+        filters.put("summaryType", "executive_summary");
+        filters.put("tone", "warm_teacher");
+        filters.put("timeRange", DashboardOverviewConstants.DEFAULT_TIME_RANGE);
+
+        DashboardAnswerComposeResult result = dashboardAnswerComposeService.compose(
+                DashboardAnswerComposeRequest.builder()
+                        .role(role)
+                        .operatorUserId(operatorUserId)
+                        .targetUserId(targetUserId)
+                        .originalQuery(query)
+                        .capability("PRELOADED_DIRECT")
+                        .filters(filters)
+                        .data(data)
+                        .responseLanguage(DashboardOverviewConstants.RESPONSE_LANGUAGE_ZH_HANT)
+                        .build()
+        );
+
+        return result == null || result.getAnswer() == null ? null : result.getAnswer().trim();
+    }
+
+    private void putIfPresent(Map<String, Object> target, String key, Object value) {
+        if (target == null || key == null || key.isBlank() || value == null) {
+            return;
+        }
+        if (value instanceof String text) {
+            if (!text.isBlank()) {
+                target.put(key, text.trim());
+            }
+            return;
+        }
+        if (value instanceof List<?> list && list.isEmpty()) {
+            return;
+        }
+        if (value instanceof Map<?, ?> map && map.isEmpty()) {
+            return;
+        }
+        target.put(key, value);
+    }
+
+    private String firstNonBlank(String... values) {
+        if (values == null) {
+            return null;
+        }
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value.trim();
+            }
+        }
+        return null;
+    }
+
+    private Double firstNumber(Object... values) {
+        if (values == null) {
+            return null;
+        }
+        for (Object value : values) {
+            Double parsed = toDouble(value);
+            if (parsed != null) {
+                return parsed;
+            }
+        }
+        return null;
+    }
+
+    private Integer firstInteger(Object... values) {
+        if (values == null) {
+            return null;
+        }
+        for (Object value : values) {
+            Integer parsed = toInteger(value);
+            if (parsed != null) {
+                return parsed;
+            }
+        }
+        return null;
+    }
+
+    private Double toDouble(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof Number number) {
+            return number.doubleValue();
+        }
+        try {
+            return Double.parseDouble(String.valueOf(value).trim());
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private Integer toInteger(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        try {
+            return Integer.parseInt(String.valueOf(value).trim());
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
+    }
+
+    private List<String> splitSummarySentences(String text) {
+        if (text == null || text.isBlank()) {
+            return List.of();
+        }
+        return Arrays.stream(text.split("[。！？!?\\n]+"))
+                .map(String::trim)
+                .filter(s -> !s.isBlank())
+                .toList();
+    }
+
+    private static class WeakModule {
+        private final String moduleName;
+        private final Double score;
+
+        private WeakModule(String moduleName, Double score) {
+            this.moduleName = moduleName;
+            this.score = score;
+        }
     }
 }

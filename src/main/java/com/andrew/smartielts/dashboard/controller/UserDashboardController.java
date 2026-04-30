@@ -8,6 +8,10 @@ import com.andrew.smartielts.utils.SecurityUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
+import com.andrew.smartielts.dashboard.constants.DashboardOverviewConstants;
+import com.andrew.smartielts.dashboard.domain.vo.UserDashboardOverviewVisualVO;
+import com.andrew.smartielts.dashboard.domain.vo.UserExecutiveSummaryVO;
+import com.andrew.smartielts.dashboard.service.UserDashboardService;
 
 @RestController
 @RequestMapping("/smartielts/dashboard/user")
@@ -16,6 +20,7 @@ import org.springframework.web.bind.annotation.*;
 public class UserDashboardController {
 
     private final DashboardIntentExecutionFacade executionFacade;
+    private final UserDashboardService userDashboardService;
 
     @PostMapping("/ask")
     public Result<DashboardAssistantResponse> ask(@RequestBody DashboardAskRequest request) {
@@ -42,6 +47,24 @@ public class UserDashboardController {
                 response.getMeta());
 
         return Result.success(response);
+    }
+
+    @GetMapping("/overview_visual")
+    public Result<UserDashboardOverviewVisualVO> getUserOverviewVisual(
+            @RequestParam(name = DashboardOverviewConstants.QUERY_PARAM_TIME_RANGE,
+                    defaultValue = DashboardOverviewConstants.DEFAULT_TIME_RANGE) String timeRange) {
+
+        Long operatorUserId = currentUserId();
+        return Result.success(userDashboardService.userOverviewVisual(operatorUserId, timeRange));
+    }
+
+    @GetMapping("/executive_summary")
+    public Result<UserExecutiveSummaryVO> getUserExecutiveSummary(
+            @RequestParam(name = DashboardOverviewConstants.QUERY_PARAM_TIME_RANGE,
+                    defaultValue = DashboardOverviewConstants.DEFAULT_TIME_RANGE) String timeRange) {
+
+        Long operatorUserId = currentUserId();
+        return Result.success(userDashboardService.userExecutiveSummary(operatorUserId, timeRange));
     }
 
     private Long currentUserId() {

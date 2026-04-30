@@ -194,8 +194,8 @@ public class DashboardSqlTemplateRegistry {
 
     public Map<String, Object> resolveParams(SecureDashboardQueryRequest request) {
         Map<String, Object> params = new HashMap<>();
-        params.put("operatorUserId", request.getOperatorUserId());
-        params.put("targetUserId", request.getTargetUserId());
+        params.put("operator_user_id", request.getOperatorUserId());
+        params.put("target_user_id", request.getTargetUserId());
         params.put("limit", request.getParams() == null ? 10 : request.getParams().getOrDefault("limit", 10));
         return params;
     }

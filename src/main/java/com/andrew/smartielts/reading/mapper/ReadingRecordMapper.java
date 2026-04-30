@@ -76,4 +76,10 @@ public interface ReadingRecordMapper {
                                                  @Param("limit") Integer limit);
 
     BigDecimal selectUserAverageScore(@Param("userId") Long userId);
+
+    ReadingRecord findBySessionIdForUser(@Param("sessionId") String sessionId, @Param("userId") Long userId);
+
+    ReadingRecord findInProgressByTestIdForUser(@Param("testId") Long testId, @Param("userId") Long userId);
+
+    int updateSessionState(ReadingRecord record);
 }

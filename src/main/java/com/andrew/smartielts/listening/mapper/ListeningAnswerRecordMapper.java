@@ -9,7 +9,7 @@ import java.util.List;
 @Mapper
 public interface ListeningAnswerRecordMapper {
 
-    void insert(ListeningAnswerRecord record);
+    int insertListeningAnswerRecord(ListeningAnswerRecord record);
 
     List<ListeningAnswerRecord> findByRecordId(@Param("recordId") Long recordId);
 }

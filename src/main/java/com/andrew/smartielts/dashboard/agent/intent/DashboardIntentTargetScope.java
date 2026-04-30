@@ -15,7 +15,7 @@ public enum DashboardIntentTargetScope {
         String normalized = value.trim().toUpperCase();
 
         return switch (normalized) {
-            case "SPECIFICUSER" -> SPECIFIC_USER;
+            case "SPECIFIC_USER" -> SPECIFIC_USER;
             default -> DashboardIntentTargetScope.valueOf(normalized);
         };
     }

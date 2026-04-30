@@ -1,0 +1,196 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.andrew.smartielts.reading.mapper.ReadingPartGroupMapper">
+
+    <resultMap id="BaseMap" type="com.andrew.smartielts.common.domain.pojo.TestPartGroup">
+        <id column="id" property="id"/>
+        <result column="test_id" property="testId"/>
+        <result column="part_number" property="partNumber"/>
+        <result column="group_number" property="groupNumber"/>
+        <result column="title" property="title"/>
+        <result column="instruction_text" property="instructionText"/>
+        <result column="group_guide_text" property="groupGuideText"/>
+        <result column="group_requirement_text" property="groupRequirementText"/>
+        <result column="question_no_start" property="questionNoStart"/>
+        <result column="question_no_end" property="questionNoEnd"/>
+        <result column="display_order" property="displayOrder"/>
+        <result column="time_limit_seconds" property="timeLimitSeconds"/>
+        <result column="is_deleted" property="isDeleted"/>
+    </resultMap>
+
+    <sql id="BaseColumnList">
+        id,
+        test_id,
+        part_number,
+        group_number,
+        title,
+        instruction_text,
+        group_guide_text,
+        group_requirement_text,
+        question_no_start,
+        question_no_end,
+        display_order,
+        time_limit_seconds,
+        is_deleted
+    </sql>
+
+    <insert id="insertReadingPartGroup"
+            parameterType="com.andrew.smartielts.common.domain.pojo.TestPartGroup"
+            useGeneratedKeys="true"
+            keyProperty="id"
+            keyColumn="id">
+        INSERT INTO reading_part_group (
+        test_id,
+        part_number,
+        group_number,
+        title,
+        instruction_text,
+        group_guide_text,
+        group_requirement_text,
+        question_no_start,
+        question_no_end,
+        display_order,
+        time_limit_seconds,
+        is_deleted
+        ) VALUES (
+        #{testId},
+        #{partNumber},
+        #{groupNumber},
+        #{title},
+        #{instructionText},
+        #{groupGuideText},
+        #{groupRequirementText},
+        #{questionNoStart},
+        #{questionNoEnd},
+        #{displayOrder},
+        #{timeLimitSeconds},
+        0
+        )
+    </insert>
+
+    <select id="findActiveById" resultMap="BaseMap">
+        SELECT <include refid="BaseColumnList"/>
+        FROM reading_part_group
+        WHERE id = #{id}
+        AND is_deleted = 0
+        LIMIT 1
+    </select>
+
+    <select id="findAnyById" resultMap="BaseMap">
+        SELECT <include refid="BaseColumnList"/>
+        FROM reading_part_group
+        WHERE id = #{id}
+        LIMIT 1
+    </select>
+
+    <select id="findActiveByTestId" resultMap="BaseMap">
+        SELECT <include refid="BaseColumnList"/>
+        FROM reading_part_group
+        WHERE test_id = #{testId}
+        AND is_deleted = 0
+        ORDER BY display_order ASC, part_number ASC, group_number ASC, id ASC
+    </select>
+
+    <select id="findAnyByTestId" resultMap="BaseMap">
+        SELECT <include refid="BaseColumnList"/>
+        FROM reading_part_group
+        WHERE test_id = #{testId}
+        ORDER BY display_order ASC, part_number ASC, group_number ASC, id ASC
+    </select>
+
+    <update id="updateReadingPartGroup"
+            parameterType="com.andrew.smartielts.common.domain.pojo.TestPartGroup">
+        UPDATE reading_part_group
+        SET part_number = #{partNumber},
+        group_number = #{groupNumber},
+        title = #{title},
+        instruction_text = #{instructionText},
+        group_guide_text = #{groupGuideText},
+        group_requirement_text = #{groupRequirementText},
+        question_no_start = #{questionNoStart},
+        question_no_end = #{questionNoEnd},
+        display_order = #{displayOrder},
+        time_limit_seconds = #{timeLimitSeconds}
+        WHERE id = #{id}
+    </update>
+
+    <update id="softDeleteById">
+        UPDATE reading_part_group
+        SET is_deleted = 1
+        WHERE id = #{id}
+        AND is_deleted = 0
+    </update>
+
+    <update id="softDeleteByTestId">
+        UPDATE reading_part_group
+        SET is_deleted = 1
+        WHERE test_id = #{testId}
+        AND is_deleted = 0
+    </update>
+
+    <update id="restoreById">
+        UPDATE reading_part_group
+        SET is_deleted = 0
+        WHERE id = #{id}
+        AND is_deleted = 1
+    </update>
+
+    <update id="restoreByTestId">
+        UPDATE reading_part_group
+        SET is_deleted = 0
+        WHERE test_id = #{testId}
+        AND is_deleted = 1
+    </update>
+
+    <insert id="insertPartGroup" parameterType="com.andrew.smartielts.common.domain.pojo.TestPartGroup" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO readingpartgroup
+        (
+        testid,
+        partnumber,
+        groupnumber,
+        title,
+        instructiontext,
+        groupguidetext,
+        grouprequirementtext,
+        questionnostart,
+        questionnoend,
+        displayorder,
+        timelimitseconds,
+        isdeleted
+        )
+        VALUES
+        (
+        #{testId},
+        #{partNumber},
+        #{groupNumber},
+        #{title},
+        #{instructionText},
+        #{groupGuideText},
+        #{groupRequirementText},
+        #{questionNoStart},
+        #{questionNoEnd},
+        #{displayOrder},
+        #{timeLimitSeconds},
+        #{isDeleted}
+        )
+    </insert>
+
+    <update id="updatePartGroup" parameterType="com.andrew.smartielts.common.domain.pojo.TestPartGroup">
+        UPDATE readingpartgroup
+        SET
+        partnumber = #{partNumber},
+        groupnumber = #{groupNumber},
+        title = #{title},
+        instructiontext = #{instructionText},
+        groupguidetext = #{groupGuideText},
+        grouprequirementtext = #{groupRequirementText},
+        questionnostart = #{questionNoStart},
+        questionnoend = #{questionNoEnd},
+        displayorder = #{displayOrder},
+        timelimitseconds = #{timeLimitSeconds}
+        WHERE id = #{id}
+    </update>
+
+</mapper>

@@ -221,7 +221,7 @@ public class DashboardTemplateAnswerComposeService implements DashboardAnswerCom
         boolean deletedOnlyQuery =
                 (request.getOriginalQuery() != null
                         && request.getOriginalQuery().toLowerCase(Locale.ROOT).contains("刪"))
-                        || "USERSELFDELETEDSUMMARY".equalsIgnoreCase(request.getCapability());
+                        || "USER_SELF_DELETED_SUMMARY".equalsIgnoreCase(request.getCapability());
 
         String answer;
         if (deletedOnlyQuery) {

@@ -11,7 +11,6 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
@@ -22,8 +21,11 @@ import org.springframework.web.bind.annotation.*;
 @SecurityRequirement(name = "bearerAuth")
 public class AdminReadingController {
 
-    @Autowired
-    private AdminReadingService adminReadingService;
+    private final AdminReadingService adminReadingService;
+
+    public AdminReadingController(AdminReadingService adminReadingService) {
+        this.adminReadingService = adminReadingService;
+    }
 
     @Operation(summary = "Create reading test")
     @PostMapping("/tests")

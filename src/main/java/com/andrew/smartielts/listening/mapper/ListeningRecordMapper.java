@@ -67,4 +67,10 @@ public interface ListeningRecordMapper {
 
     BigDecimal selectUserAverageScore(@Param("userId") Long userId);
 
+    ListeningRecord findBySessionIdForUser(@Param("sessionId") String sessionId, @Param("userId") Long userId);
+
+    ListeningRecord findInProgressByTestIdForUser(@Param("testId") Long testId, @Param("userId") Long userId);
+
+    int updateSessionState(ListeningRecord record);
+
 }

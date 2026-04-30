@@ -1,3 +1,4 @@
+// query/DashboardSqlSchemaConstants.java
 package com.andrew.smartielts.dashboard.query;
 
 public final class DashboardSqlSchemaConstants {
@@ -13,9 +14,9 @@ public final class DashboardSqlSchemaConstants {
                 "success",
                 "sql",
                 "params",
-                "expectedColumns",
-                "queryPurpose",
-                "reasoningSummary",
+                "expected_columns",
+                "query_purpose",
+                "reasoning_summary",
                 "confidence",
                 "suggestions"
               ],
@@ -27,27 +28,22 @@ public final class DashboardSqlSchemaConstants {
                   "type": "string"
                 },
                 "params": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": ["string", "number", "integer", "boolean", "null"]
-                  }
+                  "type": "object"
                 },
-                "expectedColumns": {
+                "expected_columns": {
                   "type": "array",
                   "items": {
                     "type": "string"
                   }
                 },
-                "queryPurpose": {
+                "query_purpose": {
                   "type": "string"
                 },
-                "reasoningSummary": {
+                "reasoning_summary": {
                   "type": "string"
                 },
                 "confidence": {
-                  "type": "number",
-                  "minimum": 0,
-                  "maximum": 1
+                  "type": "number"
                 },
                 "suggestions": {
                   "type": "array",
@@ -83,21 +79,7 @@ public final class DashboardSqlSchemaConstants {
                   }
                 },
                 "meta": {
-                  "type": "object",
-                  "additionalProperties": false,
-                  "required": [
-                    "reviewAction",
-                    "reviewSummary"
-                  ],
-                  "properties": {
-                    "reviewAction": {
-                      "type": "string",
-                      "enum": ["PROCEED", "PARTIAL", "INSUFFICIENT"]
-                    },
-                    "reviewSummary": {
-                      "type": "string"
-                    }
-                  }
+                  "type": "object"
                 }
               }
             }

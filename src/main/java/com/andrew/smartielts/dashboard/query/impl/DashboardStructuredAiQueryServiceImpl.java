@@ -1,8 +1,13 @@
 package com.andrew.smartielts.dashboard.query.impl;
 
 import com.andrew.smartielts.dashboard.agent.answer.DashboardAnswerComposeService;
+import com.andrew.smartielts.dashboard.agent.answer.DashboardAnswerReviewAction;
+import com.andrew.smartielts.dashboard.agent.answer.DashboardAnswerReviewService;
 import com.andrew.smartielts.dashboard.agent.answer.dto.DashboardAnswerComposeRequest;
 import com.andrew.smartielts.dashboard.agent.answer.dto.DashboardAnswerComposeResult;
+import com.andrew.smartielts.dashboard.agent.answer.dto.DashboardAnswerReviewRequest;
+import com.andrew.smartielts.dashboard.agent.answer.dto.DashboardAnswerReviewResult;
+import com.andrew.smartielts.dashboard.agent.intent.DashboardIntentCapability;
 import com.andrew.smartielts.dashboard.agent.intent.dto.DashboardIntentParseResult;
 import com.andrew.smartielts.dashboard.controller.dto.DashboardAssistantResponse;
 import com.andrew.smartielts.dashboard.query.DashboardSqlGenerationService;
@@ -23,9 +28,25 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class DashboardStructuredAiQueryServiceImpl implements DashboardStructuredAiQueryService {
 
+    private static final String ANSWER_MODE_AI_SQL_SUCCESS = "AI_SQL_SUCCESS";
+    private static final String ANSWER_MODE_AI_SQL_EMPTY_RESULT = "AI_SQL_EMPTY_RESULT";
+    private static final String ANSWER_MODE_AI_SQL_GENERATION_FAILED = "AI_SQL_GENERATION_FAILED";
+    private static final String ANSWER_MODE_AI_SQL_REVIEW_EXIT = "AI_SQL_REVIEW_EXIT";
+    private static final String ANSWER_MODE_AI_SQL_REVIEW_RETRY = "AI_SQL_REVIEW_RETRY";
+    private static final String ANSWER_MODE_AI_SQL_COMPOSE_FALLBACK = "AI_SQL_COMPOSE_FALLBACK";
+
+    private static final String META_KEY_ANSWER_MODE = "answer_mode";
+    private static final String META_KEY_QUERY_PURPOSE = "query_purpose";
+    private static final String META_KEY_CONFIDENCE = "confidence";
+    private static final String META_KEY_ROW_COUNT = "row_count";
+    private static final String META_KEY_REASONING_SUMMARY = "reasoning_summary";
+    private static final String META_KEY_REVIEW_SUMMARY = "review_summary";
+    private static final String META_KEY_RETRIED = "retried";
+
     private final DashboardSqlGenerationService dashboardSqlGenerationService;
     private final SecureDashboardQueryService secureDashboardQueryService;
     private final DashboardAnswerComposeService dashboardAnswerComposeService;
+    private final DashboardAnswerReviewService dashboardAnswerReviewService;
 
     @Override
     public DashboardAssistantResponse execute(String role,
@@ -34,205 +55,390 @@ public class DashboardStructuredAiQueryServiceImpl implements DashboardStructure
                                               String originalQuery,
                                               DashboardIntentParseResult intent,
                                               Map<String, Object> context) {
-
         long startedAt = System.currentTimeMillis();
 
-        log.info("dashboard.ai.sql stage=EXECUTE_START role={} operatorUserId={} targetUserId={} query={} capability={} filters={}",
+        DashboardStructuredExecutionResult executionResult = run_once(
                 role,
                 operatorUserId,
                 targetUserId,
-                safe(originalQuery),
-                intent == null || intent.getCapability() == null ? null : intent.getCapability().name(),
-                intent == null ? null : intent.getFilters());
-
-        long sqlStartedAt = System.currentTimeMillis();
-        log.info("dashboard.ai.sql stage=SQL_GENERATION_START role={} operatorUserId={} targetUserId={}",
-                role, operatorUserId, targetUserId);
-
-        DashboardSqlGenerationResult sqlPlan = dashboardSqlGenerationService.generate(
-                role, operatorUserId, targetUserId, originalQuery, intent, context
+                originalQuery,
+                intent,
+                context
         );
 
-        log.info("dashboard.ai.sql stage=SQL_GENERATED role={} operatorUserId={} targetUserId={} elapsedMs={} success={} queryPurpose={} expectedColumns={}",
+        DashboardAnswerReviewResult reviewResult = review_current_result(
                 role,
                 operatorUserId,
                 targetUserId,
-                System.currentTimeMillis() - sqlStartedAt,
-                sqlPlan != null && Boolean.TRUE.equals(sqlPlan.getSuccess()),
-                sqlPlan == null ? null : sqlPlan.getQueryPurpose(),
-                sqlPlan == null ? null : sqlPlan.getExpectedColumns());
-
-        if (sqlPlan == null || !Boolean.TRUE.equals(sqlPlan.getSuccess()) || isBlank(sqlPlan.getSql())) {
-            log.warn("dashboard.ai.sql stage=SQL_GENERATION_FAILED role={} operatorUserId={} targetUserId={} totalElapsedMs={} query={} reason={}",
-                    role, operatorUserId, targetUserId, System.currentTimeMillis() - startedAt, safe(originalQuery),
-                    sqlPlan == null ? "sqlPlan is null" : safe(sqlPlan.getReasoningSummary()));
-
-            return DashboardAssistantResponse.builder()
-                    .answer("目前無法安全地完成這個查詢，請改成更明確的條件後再試。")
-                    .data(Map.of(
-                            "reasoningSummary", sqlPlan == null ? "SQL generation returned null." : safe(sqlPlan.getReasoningSummary()),
-                            "suggestions", sqlPlan == null ? List.of() : safeList(sqlPlan.getSuggestions())
-                    ))
-                    .meta(Map.of(
-                            "answerMode", "AI_SQL_GENERATION_FAILED",
-                            "queryPurpose", sqlPlan == null ? "" : safe(sqlPlan.getQueryPurpose()),
-                            "confidence", sqlPlan == null || sqlPlan.getConfidence() == null ? 0.0D : sqlPlan.getConfidence()
-                    ))
-                    .suggestions(sqlPlan == null ? List.of() : safeList(sqlPlan.getSuggestions()))
-                    .build();
-        }
-
-        long queryStartedAt = System.currentTimeMillis();
-        log.info("dashboard.ai.sql stage=QUERY_EXECUTE_START role={} operatorUserId={} targetUserId={} sql={} params={}",
-                role, operatorUserId, targetUserId, safe(sqlPlan.getSql()), sqlPlan.getParams());
-
-        List<Map<String, Object>> rows = executeRows(
-                role, operatorUserId, targetUserId, originalQuery, intent, sqlPlan
+                originalQuery,
+                intent,
+                executionResult.rows()
         );
 
-        log.info("dashboard.ai.sql stage=ROWS_FETCHED role={} operatorUserId={} targetUserId={} elapsedMs={} rowCount={}",
-                role,
-                operatorUserId,
-                targetUserId,
-                System.currentTimeMillis() - queryStartedAt,
-                rows == null ? 0 : rows.size());
+        if (reviewResult.getAction() == DashboardAnswerReviewAction.RETRY_QUERY
+                && reviewResult.getRetryFilters() != null
+                && !reviewResult.getRetryFilters().isEmpty()) {
+            DashboardIntentParseResult retriedIntent = cloneWithRetryFilters(intent, reviewResult.getRetryFilters());
 
-        try {
-            long composeStartedAt = System.currentTimeMillis();
-            log.info("dashboard.ai.sql stage=LOCAL_COMPOSE_START role={} operatorUserId={} targetUserId={} rowCount={}",
-                    role, operatorUserId, targetUserId, rows == null ? 0 : rows.size());
-
-            DashboardAnswerComposeResult composed = composeAnswer(
-                    role, operatorUserId, targetUserId, originalQuery, intent, rows, sqlPlan
-            );
-
-            log.info("dashboard.ai.sql stage=LOCAL_COMPOSE_COMPLETED role={} operatorUserId={} targetUserId={} elapsedMs={} suggestionCount={}",
+            DashboardStructuredExecutionResult retriedExecutionResult = run_once(
                     role,
                     operatorUserId,
                     targetUserId,
-                    System.currentTimeMillis() - composeStartedAt,
-                    composed == null || composed.getSuggestions() == null ? 0 : composed.getSuggestions().size());
-
-            log.info("dashboard.ai.sql stage=EXECUTE_DONE role={} operatorUserId={} targetUserId={} totalElapsedMs={} answerMode=AI_SQL",
-                    role, operatorUserId, targetUserId, System.currentTimeMillis() - startedAt);
-
-            return DashboardAssistantResponse.builder()
-                    .answer(composed.getAnswer())
-                    .data(rows)
-                    .meta(buildMeta(intent, sqlPlan, rows, "AI_SQL"))
-                    .suggestions(safeList(composed.getSuggestions()))
-                    .build();
-        } catch (Exception e) {
-            log.error("dashboard.ai.sql stage=LOCAL_COMPOSE_FAILED role={} operatorUserId={} targetUserId={} totalElapsedMs={} message={}",
-                    role, operatorUserId, targetUserId, System.currentTimeMillis() - startedAt, e.getMessage(), e);
-
-            long fallbackStartedAt = System.currentTimeMillis();
-            log.info("dashboard.ai.sql stage=FALLBACK_REVIEW_START role={} operatorUserId={} targetUserId={}",
-                    role, operatorUserId, targetUserId);
-
-            Map<String, Object> reviewed = dashboardSqlGenerationService.reviewAndAnswer(
-                    role, operatorUserId, targetUserId, originalQuery, intent, sqlPlan, rows
+                    originalQuery,
+                    retriedIntent,
+                    context
             );
 
-            log.info("dashboard.ai.sql stage=FALLBACK_REVIEW_COMPLETED role={} operatorUserId={} targetUserId={} elapsedMs={} suggestionCount={}",
+            DashboardAnswerReviewResult retriedReviewResult = review_current_result(
                     role,
                     operatorUserId,
                     targetUserId,
-                    System.currentTimeMillis() - fallbackStartedAt,
-                    extractSuggestions(reviewed.get("suggestions")).size());
+                    originalQuery,
+                    retriedIntent,
+                    retriedExecutionResult.rows()
+            );
 
-            Map<String, Object> mergedMeta = new LinkedHashMap<>();
-            mergedMeta.putAll(buildMeta(intent, sqlPlan, rows, "AI_SQL_FALLBACK"));
-            Object reviewedMeta = reviewed.get("meta");
-            if (reviewedMeta instanceof Map<?, ?> map) {
-                map.forEach((k, v) -> mergedMeta.put(String.valueOf(k), v));
+            if (retriedReviewResult.getAction() == DashboardAnswerReviewAction.EXIT) {
+                return build_exit_response(
+                        retriedReviewResult,
+                        retriedExecutionResult.sqlPlan(),
+                        retriedExecutionResult.rows(),
+                        true
+                );
             }
 
-            log.info("dashboard.ai.sql stage=EXECUTE_DONE role={} operatorUserId={} targetUserId={} totalElapsedMs={} answerMode=AI_SQL_FALLBACK",
-                    role, operatorUserId, targetUserId, System.currentTimeMillis() - startedAt);
-
-            return DashboardAssistantResponse.builder()
-                    .answer(asString(reviewed.get("answer")))
-                    .data(reviewed.getOrDefault("data", rows))
-                    .meta(mergedMeta)
-                    .suggestions(extractSuggestions(reviewed.get("suggestions")))
-                    .build();
+            return buildSuccessResponse(
+                    role,
+                    operatorUserId,
+                    targetUserId,
+                    originalQuery,
+                    retriedIntent,
+                    retriedExecutionResult,
+                    retriedReviewResult,
+                    true,
+                    startedAt
+            );
         }
+
+        if (reviewResult.getAction() == DashboardAnswerReviewAction.EXIT) {
+            return build_exit_response(
+                    reviewResult,
+                    executionResult.sqlPlan(),
+                    executionResult.rows(),
+                    false
+            );
+        }
+
+        return buildSuccessResponse(
+                role,
+                operatorUserId,
+                targetUserId,
+                originalQuery,
+                intent,
+                executionResult,
+                reviewResult,
+                false,
+                startedAt
+        );
     }
 
-    private List<Map<String, Object>> executeRows(String role,
-                                                  Long operatorUserId,
-                                                  Long targetUserId,
-                                                  String originalQuery,
-                                                  DashboardIntentParseResult intent,
-                                                  DashboardSqlGenerationResult sqlPlan) {
-        SecureDashboardQueryRequest request = new SecureDashboardQueryRequest();
-        request.setRole(role);
-        request.setOperatorUserId(operatorUserId);
-        request.setTargetUserId(targetUserId);
-        request.setAiGenerated(true);
-        request.setRawSql(sqlPlan.getSql());
-        request.setParams(sqlPlan.getParams());
-        request.setOriginalQuery(originalQuery);
-        request.setIntentCapability(intent == null || intent.getCapability() == null ? null : intent.getCapability().name());
-        request.setExpectedColumns(sqlPlan.getExpectedColumns());
+    private DashboardStructuredExecutionResult run_once(String role,
+                                                        Long operatorUserId,
+                                                        Long targetUserId,
+                                                        String originalQuery,
+                                                        DashboardIntentParseResult intent,
+                                                        Map<String, Object> context) {
+        DashboardSqlGenerationResult sqlPlan = dashboardSqlGenerationService.generate(
+                role,
+                operatorUserId,
+                targetUserId,
+                originalQuery,
+                intent,
+                context
+        );
 
-        return secureDashboardQueryService.execute(request);
+        if (sqlPlan == null) {
+            throw new IllegalStateException("dashboard_sql_generation_failed: null_sql_plan");
+        }
+        if (!Boolean.TRUE.equals(sqlPlan.getSuccess())) {
+            throw new IllegalStateException(
+                    "dashboard_sql_generation_failed: " + sqlPlan.getReasoningSummary()
+            );
+        }
+        if (sqlPlan.getSql() == null || sqlPlan.getSql().isBlank()) {
+            throw new IllegalStateException("dashboard_sql_generation_failed: empty_sql");
+        }
+
+        SecureDashboardQueryRequest secureRequest = new SecureDashboardQueryRequest();
+        secureRequest.setRole(role);
+        secureRequest.setOperatorUserId(operatorUserId);
+        secureRequest.setTargetUserId(targetUserId);
+        secureRequest.setIntentCapability(
+                intent != null && intent.getCapability() != null ? intent.getCapability().name() : null
+        );
+        secureRequest.setRawSql(sqlPlan.getSql());
+        secureRequest.setParams(sqlPlan.getParams());
+        secureRequest.setExpectedColumns(sqlPlan.getExpectedColumns());
+        secureRequest.setAiGenerated(true);
+
+        List<Map<String, Object>> rows = (List<Map<String, Object>>) secureDashboardQueryService.execute(secureRequest);
+
+        return new DashboardStructuredExecutionResult(
+                sqlPlan,
+                rows == null ? List.of() : rows
+        );
     }
 
-    private DashboardAnswerComposeResult composeAnswer(String role,
-                                                       Long operatorUserId,
-                                                       Long targetUserId,
-                                                       String originalQuery,
-                                                       DashboardIntentParseResult intent,
-                                                       List<Map<String, Object>> rows,
-                                                       DashboardSqlGenerationResult sqlPlan) {
-        DashboardAnswerComposeRequest request = DashboardAnswerComposeRequest.builder()
-                .role(role)
-                .operatorUserId(operatorUserId)
-                .targetUserId(targetUserId)
-                .originalQuery(originalQuery)
-                .capability(intent == null || intent.getCapability() == null ? "STRUCTUREDQUERY" : intent.getCapability().name())
-                .filters(intent == null || intent.getFilters() == null ? Map.of() : intent.getFilters())
-                .data(rows)
-                .responseLanguage(detectResponseLanguage(originalQuery))
+    private DashboardAnswerReviewResult review_current_result(String role,
+                                                              Long operatorUserId,
+                                                              Long targetUserId,
+                                                              String originalQuery,
+                                                              DashboardIntentParseResult intent,
+                                                              List<Map<String, Object>> rows) {
+        return dashboardAnswerReviewService.review(
+                DashboardAnswerReviewRequest.builder()
+                        .role(role)
+                        .operatorUserId(operatorUserId)
+                        .targetUserId(targetUserId)
+                        .originalQuery(originalQuery)
+                        .capability(intent == null || intent.getCapability() == null ? null : intent.getCapability().name())
+                        .filters(intent == null || intent.getFilters() == null ? Map.of() : intent.getFilters())
+                        .data(rows)
+                        .build()
+        );
+    }
+
+    @SuppressWarnings("unchecked")
+    private DashboardAssistantResponse buildSuccessResponse(
+            String role,
+            Long operatorUserId,
+            Long targetUserId,
+            String originalQuery,
+            DashboardIntentParseResult intent,
+            DashboardStructuredExecutionResult executionResult,
+            DashboardAnswerReviewResult reviewResult,
+            boolean retried,
+            long startedAt) {
+
+        Object reviewed = dashboardSqlGenerationService.reviewAndAnswer(
+                role,
+                operatorUserId,
+                targetUserId,
+                originalQuery,
+                intent,
+                executionResult.sqlPlan(),
+                executionResult.rows()
+        );
+
+        Map<String, Object> reviewedMap = to_string_key_map(reviewed);
+        Map<String, Object> reviewedMeta = to_string_key_map(reviewedMap.get("meta"));
+
+        Object reviewedData = reviewedMap.containsKey("data")
+                ? reviewedMap.get("data")
+                : executionResult.rows();
+
+        String reviewedAnswer = reviewedMap.containsKey("answer")
+                ? safe(String.valueOf(reviewedMap.get("answer")))
+                : "";
+
+        List<String> reviewedSuggestions = to_string_list(reviewedMap.get("suggestions"));
+
+        DashboardAnswerComposeResult composeResult = dashboardAnswerComposeService.compose(
+                DashboardAnswerComposeRequest.builder()
+                        .role(role)
+                        .operatorUserId(operatorUserId)
+                        .targetUserId(targetUserId)
+                        .originalQuery(originalQuery)
+                        .capability(intent != null && intent.getCapability() != null
+                                ? intent.getCapability().name()
+                                : DashboardIntentCapability.STRUCTURED_QUERY.name())
+                        .filters(intent != null && intent.getFilters() != null ? intent.getFilters() : Map.of())
+                        .data(reviewedData)
+                        .responseLanguage(detect_response_language(originalQuery))
+                        .build()
+        );
+
+        String composedAnswer = composeResult == null ? "" : safe(composeResult.getAnswer());
+        List<String> composedSuggestions = composeResult == null || composeResult.getSuggestions() == null
+                ? List.of()
+                : composeResult.getSuggestions();
+
+        boolean useReviewedAnswer = has_text(reviewedAnswer) && !is_generic_sql_answer(reviewedAnswer);
+
+        String finalAnswer = useReviewedAnswer
+                ? reviewedAnswer
+                : first_non_blank(
+                composedAnswer,
+                reviewedAnswer,
+                executionResult.rows().isEmpty()
+                        ? "目前沒有符合條件的資料。"
+                        : "我已根據目前資料整理出結果。"
+        );
+
+        List<String> finalSuggestions = !composedSuggestions.isEmpty()
+                ? composedSuggestions
+                : reviewedSuggestions;
+
+        String finalAnswerMode;
+        if (executionResult.rows().isEmpty()) {
+            finalAnswerMode = ANSWER_MODE_AI_SQL_EMPTY_RESULT;
+        } else if (useReviewedAnswer) {
+            finalAnswerMode = ANSWER_MODE_AI_SQL_SUCCESS;
+        } else {
+            finalAnswerMode = ANSWER_MODE_AI_SQL_COMPOSE_FALLBACK;
+        }
+
+        Map<String, Object> meta = new LinkedHashMap<>();
+        if (!reviewedMeta.isEmpty()) {
+            meta.putAll(reviewedMeta);
+        }
+        meta.put(META_KEY_ANSWER_MODE, finalAnswerMode);
+        meta.put(META_KEY_QUERY_PURPOSE, safe(executionResult.sqlPlan().getQueryPurpose()));
+        meta.put(META_KEY_CONFIDENCE,
+                executionResult.sqlPlan().getConfidence() == null ? 0.0D : executionResult.sqlPlan().getConfidence());
+        meta.put(META_KEY_ROW_COUNT, executionResult.rows().size());
+        meta.put(META_KEY_REASONING_SUMMARY, safe(executionResult.sqlPlan().getReasoningSummary()));
+        meta.put(META_KEY_REVIEW_SUMMARY, safe(reviewResult.getReviewSummary()));
+        meta.put(META_KEY_RETRIED, retried);
+        meta.put("answer_source", useReviewedAnswer ? "sql_review" : "compose_service");
+        meta.put("elapsedMs", System.currentTimeMillis() - startedAt);
+
+        return DashboardAssistantResponse.builder()
+                .answer(finalAnswer)
+                .data(reviewedData)
+                .meta(meta)
+                .suggestions(finalSuggestions == null ? List.of() : finalSuggestions)
                 .build();
+    }
 
-        DashboardAnswerComposeResult result = dashboardAnswerComposeService.compose(request);
-        if (result == null || result.getAnswer() == null || result.getAnswer().isBlank()) {
-            throw new IllegalStateException("compose result is empty");
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> to_string_key_map(Object source) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        if (!(source instanceof Map<?, ?> rawMap)) {
+            return result;
+        }
+        for (Map.Entry<?, ?> entry : rawMap.entrySet()) {
+            if (entry.getKey() != null) {
+                result.put(String.valueOf(entry.getKey()), entry.getValue());
+            }
         }
         return result;
     }
 
-    private Map<String, Object> buildMeta(DashboardIntentParseResult intent,
-                                          DashboardSqlGenerationResult sqlPlan,
-                                          List<Map<String, Object>> rows,
-                                          String answerMode) {
-        Map<String, Object> meta = new LinkedHashMap<>();
-        meta.put("answerMode", answerMode);
-        meta.put("queryMode", intent == null || intent.getQueryMode() == null ? "" : intent.getQueryMode().name());
-        meta.put("capability", intent == null || intent.getCapability() == null ? "" : intent.getCapability().name());
-        meta.put("queryPurpose", sqlPlan == null ? "" : safe(sqlPlan.getQueryPurpose()));
-        meta.put("confidence", sqlPlan == null || sqlPlan.getConfidence() == null ? 0.0D : sqlPlan.getConfidence());
-        meta.put("rowCount", rows == null ? 0 : rows.size());
-        meta.put("expectedColumns", sqlPlan == null ? List.of() : safeList(sqlPlan.getExpectedColumns()));
-        return meta;
+    private List<String> to_string_list(Object source) {
+        if (!(source instanceof List<?> rawList) || rawList.isEmpty()) {
+            return List.of();
+        }
+        return rawList.stream()
+                .filter(item -> item != null && !String.valueOf(item).isBlank())
+                .map(String::valueOf)
+                .toList();
     }
 
-    private String detectResponseLanguage(String query) {
-        if (query == null || query.isBlank()) {
-            return "en";
+    private boolean is_generic_sql_answer(String answer) {
+        if (is_blank(answer)) {
+            return true;
         }
-        for (char ch : query.toCharArray()) {
-            if (Character.UnicodeScript.of(ch) == Character.UnicodeScript.HAN) {
-                return "zh-Hant";
+
+        String normalized = answer.trim()
+                .replace("。", "")
+                .replace(".", "")
+                .replace(" ", "")
+                .toLowerCase();
+
+        return "已查到符合條件的資料".equals(normalized)
+                || "未查到符合條件的資料".equals(normalized)
+                || "查到符合條件的資料".equals(normalized)
+                || "no_data_matched".equals(normalized)
+                || "data_found".equals(normalized)
+                || "found_matching_data".equals(normalized);
+    }
+
+    private boolean has_text(String value) {
+        return value != null && !value.isBlank();
+    }
+
+    private String first_non_blank(String... values) {
+        if (values == null || values.length == 0) {
+            return "";
+        }
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value;
             }
         }
-        return "en";
+        return "";
     }
 
-    private boolean isBlank(String value) {
+    private DashboardAssistantResponse build_exit_response(DashboardAnswerReviewResult reviewResult,
+                                                           DashboardSqlGenerationResult sqlPlan,
+                                                           List<Map<String, Object>> rows,
+                                                           boolean retried) {
+        Map<String, Object> meta = new LinkedHashMap<>();
+        meta.put(META_KEY_ANSWER_MODE, retried ? ANSWER_MODE_AI_SQL_REVIEW_RETRY : ANSWER_MODE_AI_SQL_REVIEW_EXIT);
+        meta.put(META_KEY_QUERY_PURPOSE, sqlPlan == null ? "structured_dashboard_query" : safe(sqlPlan.getQueryPurpose()));
+        meta.put(META_KEY_CONFIDENCE, sqlPlan == null || sqlPlan.getConfidence() == null ? 0.0D : sqlPlan.getConfidence());
+        meta.put(META_KEY_ROW_COUNT, rows == null ? 0 : rows.size());
+        meta.put(META_KEY_REASONING_SUMMARY, sqlPlan == null ? "" : safe(sqlPlan.getReasoningSummary()));
+        meta.put(META_KEY_REVIEW_SUMMARY, safe(reviewResult.getReviewSummary()));
+        meta.put(META_KEY_RETRIED, retried);
+
+        return DashboardAssistantResponse.builder()
+                .answer(reviewResult.getExitMessage() == null || reviewResult.getExitMessage().isBlank()
+                        ? "目前這批資料不足以可靠回答這個問題。"
+                        : reviewResult.getExitMessage())
+                .data(rows == null ? List.of() : rows)
+                .meta(meta)
+                .suggestions(reviewResult.getSuggestions() == null ? List.of() : reviewResult.getSuggestions())
+                .build();
+    }
+
+    private DashboardIntentParseResult cloneWithRetryFilters(
+            DashboardIntentParseResult source,
+            Map<String, Object> retryFilters) {
+
+        DashboardIntentParseResult target = new DashboardIntentParseResult();
+        if (source != null) {
+            target.setSuccess(source.getSuccess());
+            target.setCapability(source.getCapability());
+            target.setQueryMode(source.getQueryMode());
+            target.setTargetScope(source.getTargetScope());
+            target.setTargetUserId(source.getTargetUserId());
+            target.setClarificationQuestion(source.getClarificationQuestion());
+            target.setReasoningSummary(source.getReasoningSummary());
+            target.setConfidence(source.getConfidence());
+            target.setSuggestions(source.getSuggestions() == null ? List.of() : List.copyOf(source.getSuggestions()));
+        }
+
+        Map<String, Object> mergedFilters = new LinkedHashMap<>();
+        if (source != null && source.getFilters() != null) {
+            mergedFilters.putAll(source.getFilters());
+        }
+        if (retryFilters != null && !retryFilters.isEmpty()) {
+            mergedFilters.putAll(retryFilters);
+        }
+        target.setFilters(mergedFilters);
+        return target;
+    }
+
+    private String detect_response_language(String query) {
+        if (query == null || query.isBlank()) {
+            return "zh-Hant";
+        }
+        int chineseCount = 0;
+        int englishCount = 0;
+        for (int i = 0; i < query.length(); i++) {
+            char ch = query.charAt(i);
+            if (ch >= '\u4E00' && ch <= '\u9FFF') {
+                chineseCount++;
+            } else if ((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z')) {
+                englishCount++;
+            }
+        }
+        return englishCount > chineseCount ? "en" : "zh-Hant";
+    }
+
+    private boolean is_blank(String value) {
         return value == null || value.isBlank();
     }
 
@@ -240,19 +446,9 @@ public class DashboardStructuredAiQueryServiceImpl implements DashboardStructure
         return value == null ? "" : value;
     }
 
-    private List<String> safeList(List<String> list) {
-        return list == null ? List.of() : list;
-    }
-
-    @SuppressWarnings("unchecked")
-    private List<String> extractSuggestions(Object value) {
-        if (value instanceof List<?> list) {
-            return (List<String>) list;
-        }
-        return List.of();
-    }
-
-    private String asString(Object value) {
-        return value == null ? null : String.valueOf(value);
+    private record DashboardStructuredExecutionResult(
+            DashboardSqlGenerationResult sqlPlan,
+            List<Map<String, Object>> rows
+    ) {
     }
 }

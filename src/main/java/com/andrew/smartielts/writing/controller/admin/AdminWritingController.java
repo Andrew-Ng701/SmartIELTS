@@ -1,6 +1,7 @@
 package com.andrew.smartielts.writing.controller.admin;
 
 import com.andrew.smartielts.common.resultDTO.Result;
+import com.andrew.smartielts.writing.domain.dto.WritingQuestionDTO;
 import com.andrew.smartielts.writing.domain.query.admin.AdminWritingDeletedRecordPageQuery;
 import com.andrew.smartielts.writing.domain.query.admin.AdminWritingRecordPageQuery;
 import com.andrew.smartielts.writing.service.admin.AdminWritingService;
@@ -8,11 +9,8 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.MediaType;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.multipart.MultipartFile;
 
 @Tag(name = "Admin Writing API")
 @RestController
@@ -21,16 +19,16 @@ import org.springframework.web.multipart.MultipartFile;
 @SecurityRequirement(name = "bearerAuth")
 public class AdminWritingController {
 
-    @Autowired
-    private AdminWritingService adminWritingService;
+    private final AdminWritingService adminWritingService;
+
+    public AdminWritingController(AdminWritingService adminWritingService) {
+        this.adminWritingService = adminWritingService;
+    }
 
     @Operation(summary = "Create writing question")
-    @PostMapping(value = "/questions", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public Result<?> createQuestion(@RequestParam String taskType,
-                                    @RequestParam String title,
-                                    @RequestParam String description,
-                                    @RequestParam(value = "image", required = false) MultipartFile image) {
-        return Result.success(adminWritingService.createQuestion(taskType, title, description, image));
+    @PostMapping("/questions")
+    public Result<?> createQuestion(@RequestBody WritingQuestionDTO dto) {
+        return Result.success(adminWritingService.createQuestion(dto));
     }
 
     @Operation(summary = "List writing questions")
@@ -46,13 +44,9 @@ public class AdminWritingController {
     }
 
     @Operation(summary = "Update writing question")
-    @PutMapping(value = "/questions/{id}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public Result<?> updateQuestion(@PathVariable Long id,
-                                    @RequestParam String taskType,
-                                    @RequestParam String title,
-                                    @RequestParam String description,
-                                    @RequestParam(value = "image", required = false) MultipartFile image) {
-        return Result.success(adminWritingService.updateQuestion(id, taskType, title, description, image));
+    @PutMapping("/questions/{id}")
+    public Result<?> updateQuestion(@PathVariable Long id, @RequestBody WritingQuestionDTO dto) {
+        return Result.success(adminWritingService.updateQuestion(id, dto));
     }
 
     @Operation(summary = "Delete writing question")

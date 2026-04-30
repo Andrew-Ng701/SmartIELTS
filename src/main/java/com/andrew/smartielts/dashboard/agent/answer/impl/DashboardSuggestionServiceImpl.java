@@ -1,6 +1,7 @@
 package com.andrew.smartielts.dashboard.agent.answer.impl;
 
 import com.andrew.smartielts.dashboard.agent.answer.DashboardSuggestionService;
+import com.andrew.smartielts.dashboard.agent.intent.DashboardIntentFilterKeys;
 import com.andrew.smartielts.dashboard.agent.intent.dto.DashboardIntentParseResult;
 import org.springframework.stereotype.Service;
 
@@ -14,15 +15,16 @@ import java.util.Map;
 public class DashboardSuggestionServiceImpl implements DashboardSuggestionService {
 
     @Override
-    public List<String> buildSuggestions(String role,
-                                         String originalQuery,
-                                         String answer,
-                                         String capability,
-                                         DashboardIntentParseResult intent,
-                                         Map<String, Object> filters,
-                                         Object data) {
+    public List<String> buildSuggestions(
+            String role,
+            String originalQuery,
+            String answer,
+            String capability,
+            DashboardIntentParseResult intent,
+            Map<String, Object> filters,
+            Object data
+    ) {
         LinkedHashSet<String> result = new LinkedHashSet<>();
-
         String query = lower(originalQuery);
         String cap = capability == null ? "" : capability;
         String module = extractModule(query, filters, data);
@@ -30,78 +32,81 @@ public class DashboardSuggestionServiceImpl implements DashboardSuggestionServic
         String userId = extractUserId(data, filters);
 
         if (userId != null) {
-            result.add("查看 user " + userId + (module != null ? " 的" + toZhModule(module) : "") + "最近30天趨勢");
-            result.add("比較 user " + userId + " 四科表現");
+            result.add("查看 user " + userId + " 最近 10 筆作答");
         }
-
         if (module != null) {
-            result.add("查看" + toZhModule(module) + "最近10筆記錄");
-            result.add("比較" + toZhModule(module) + "與其他模組表現");
+            result.add("分析 " + toZhModule(module) + " 模組表現");
         }
-
         if (timeRange != null) {
-            result.add("改看" + toZhTimeRange(nextTimeRange(timeRange)) + "數據");
+            result.add("查看 " + toZhTimeRange(nextTimeRange(timeRange)) + " 的變化");
         } else {
-            result.add("查看最近30天趨勢");
+            result.add("查看最近 30 天的趨勢");
         }
-
         if (cap.contains("RECENT") || query.contains("最近") || query.contains("latest")) {
-            result.add("只看最近10筆高分記錄");
+            result.add("查看最近 10 筆明細");
         }
-
-        if (cap.contains("PROGRESS") || query.contains("進步") || query.contains("average") || query.contains("平均")) {
-            result.add("找出目前最弱的模組");
-            result.add("比較最近30天與前30天平均分");
+        if (cap.contains("PROGRESS") || query.contains("平均") || query.contains("進步")) {
+            result.add("比較最近 30 天與前一期");
         }
-
         if ("ADMIN".equalsIgnoreCase(role)) {
-            result.add("查看異常最多的模組");
-            result.add("查看最近30天 AI 失敗趨勢");
+            result.add("查看異常 AI 任務與失敗原因");
         }
 
         if (result.isEmpty()) {
-            result.add("查看最近10筆記錄");
-            result.add("查看最近30天趨勢");
-            result.add("比較各模組表現");
+            result.add("查看最近 10 筆資料");
+            result.add("查看最近 30 天趨勢");
+            result.add("切換模組重新分析");
         }
 
-        return new ArrayList<>(result).stream()
+        return new ArrayList<>(result.stream()
                 .filter(it -> it != null && !it.isBlank())
                 .limit(3)
-                .toList();
+                .toList());
     }
 
     private String extractModule(String query, Map<String, Object> filters, Object data) {
-        if (filters != null && filters.get("module") != null) {
-            return String.valueOf(filters.get("module")).toLowerCase(Locale.ROOT);
+        if (filters != null && filters.get(DashboardIntentFilterKeys.MODULE) != null) {
+            return String.valueOf(filters.get(DashboardIntentFilterKeys.MODULE)).toLowerCase(Locale.ROOT);
         }
-        if (query.contains("listening")) return "listening";
-        if (query.contains("reading")) return "reading";
-        if (query.contains("writing")) return "writing";
-        if (query.contains("speaking")) return "speaking";
-        if (query.contains("聽")) return "listening";
-        if (query.contains("讀")) return "reading";
-        if (query.contains("寫")) return "writing";
-        if (query.contains("說")) return "speaking";
+        if (query.contains("listening") || query.contains("聽力")) {
+            return "listening";
+        }
+        if (query.contains("reading") || query.contains("閱讀")) {
+            return "reading";
+        }
+        if (query.contains("writing") || query.contains("寫作")) {
+            return "writing";
+        }
+        if (query.contains("speaking") || query.contains("口說")) {
+            return "speaking";
+        }
         return firstRowValue(data, "module");
     }
 
     private String extractTimeRange(Map<String, Object> filters, String query) {
-        if (filters != null && filters.get("timeRange") != null) {
-            return String.valueOf(filters.get("timeRange")).toLowerCase(Locale.ROOT);
+        if (filters != null && filters.get(DashboardIntentFilterKeys.TIME_RANGE) != null) {
+            return String.valueOf(filters.get(DashboardIntentFilterKeys.TIME_RANGE)).toLowerCase(Locale.ROOT);
         }
-        if (query.contains("最近7天")) return "last7days";
-        if (query.contains("最近30天")) return "last30days";
-        if (query.contains("last 7")) return "last7days";
-        if (query.contains("last 30")) return "last30days";
+        if (query.contains("7")) {
+            return "last7days";
+        }
+        if (query.contains("30")) {
+            return "last30days";
+        }
+        if (query.contains("last 7")) {
+            return "last7days";
+        }
+        if (query.contains("last 30")) {
+            return "last30days";
+        }
         return null;
     }
 
     private String extractUserId(Object data, Map<String, Object> filters) {
-        if (filters != null && filters.get("targetUserId") != null) {
-            return String.valueOf(filters.get("targetUserId"));
+        if (filters != null && filters.get(DashboardIntentFilterKeys.TARGET_USER_ID) != null) {
+            return String.valueOf(filters.get(DashboardIntentFilterKeys.TARGET_USER_ID));
         }
-        return firstRowValue(data, "userId");
+        return firstRowValue(data, "user_id");
     }
 
     @SuppressWarnings("unchecked")
@@ -118,8 +123,12 @@ public class DashboardSuggestionServiceImpl implements DashboardSuggestionServic
     }
 
     private String nextTimeRange(String current) {
-        if ("last7days".equals(current)) return "last30days";
-        if ("last30days".equals(current)) return "last90days";
+        if ("last7days".equals(current)) {
+            return "last30days";
+        }
+        if ("last30days".equals(current)) {
+            return "last90days";
+        }
         return "last30days";
     }
 
@@ -135,9 +144,9 @@ public class DashboardSuggestionServiceImpl implements DashboardSuggestionServic
 
     private String toZhTimeRange(String timeRange) {
         return switch (timeRange.toLowerCase(Locale.ROOT)) {
-            case "last7days" -> "最近7天";
-            case "last30days" -> "最近30天";
-            case "last90days" -> "最近90天";
+            case "last7days" -> "最近 7 天";
+            case "last30days" -> "最近 30 天";
+            case "last90days" -> "最近 90 天";
             default -> timeRange;
         };
     }

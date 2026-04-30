@@ -29,10 +29,16 @@ public class DashboardPreloadServiceImpl implements DashboardPreloadService {
 
     private static final long PAGE_TTL_MILLIS = 3 * 60 * 1000L;
     private static final long DETAIL_TTL_MILLIS = 10 * 60 * 1000L;
-    private static final int MAX_RECENT_QUESTION_COUNT = 10;
-    private static final String PRELOAD_QUERY = "preload";
+
     private static final String ROLE_USER = "USER";
     private static final String PAGE_NAME_DETAIL = "detail";
+
+    private static final String SCOPE_PRELOAD_OVERVIEW = "preload_overview";
+    private static final String SCOPE_PROGRESS_SUMMARY = "progress_summary";
+    private static final String SCOPE_RECENT_RECORDS = "recent_records";
+    private static final String SCOPE_MODULE_STATS = "module_stats";
+    private static final String SCOPE_LEARNING_CONTEXT = "learning_context";
+    private static final String SCOPE_QUESTION_CONTEXT = "question_context";
 
     private final DashboardCapabilityRouter capabilityRouter;
     private final DashboardLearningContextService dashboardLearningContextService;
@@ -42,96 +48,87 @@ public class DashboardPreloadServiceImpl implements DashboardPreloadService {
     private final Executor dashboardSseExecutor;
 
     @Override
-    public DashboardAskPreloadedPayload preload(
-            String role,
-            Long operatorUserId,
-            Long targetUserId,
-            String pageName,
-            DashboardAskObjectRef objectRef,
-            Map<String, Object> context
-    ) {
+    public DashboardAskPreloadedPayload preload(String role,
+                                                Long operatorUserId,
+                                                Long targetUserId,
+                                                String pageName,
+                                                DashboardAskObjectRef objectRef,
+                                                Map<String, Object> context) {
+
         String cacheKey = buildCacheKey(role, operatorUserId, targetUserId, pageName, objectRef);
         DashboardAskPreloadedPayload cached = dashboardPreloadCacheService.get(cacheKey);
         if (cached != null) {
-            return copyPayload(cached);
+            DashboardAskPreloadedPayload copied = copyPayload(cached);
+            copied.setPreloadSource("redis");
+            return copied;
         }
 
         DashboardAskPreloadedPayload payload = buildPayload(
-                role,
-                operatorUserId,
-                targetUserId,
-                pageName,
-                objectRef,
-                context
+                role, operatorUserId, targetUserId, pageName, objectRef, context
         );
+        payload.setPreloadSource("database");
 
         dashboardPreloadCacheService.put(cacheKey, payload, chooseTtl(pageName, objectRef));
         return copyPayload(payload);
     }
 
     @Override
-    public void preloadAsync(
-            String role,
-            Long operatorUserId,
-            Long targetUserId,
-            String pageName,
-            DashboardAskObjectRef objectRef,
-            Map<String, Object> context
-    ) {
+    public void preloadAsync(String role,
+                             Long operatorUserId,
+                             Long targetUserId,
+                             String pageName,
+                             DashboardAskObjectRef objectRef,
+                             Map<String, Object> context) {
         dashboardSseExecutor.execute(() -> {
             try {
                 preload(role, operatorUserId, targetUserId, pageName, objectRef, context);
             } catch (Exception e) {
-                log.warn(
-                        "Dashboard preload async failed, role={}, operatorUserId={}, targetUserId={}, pageName={}, reason={}",
-                        role, operatorUserId, targetUserId, pageName, e.getMessage()
-                );
+                log.warn("Dashboard preload async failed, role={}, operatorUserId={}, targetUserId={}, pageName={}, reason={}",
+                        role, operatorUserId, targetUserId, pageName, e.getMessage());
             }
         });
     }
 
     @Override
-    public DashboardAskPreloadedPayload getCached(
-            String role,
-            Long operatorUserId,
-            Long targetUserId,
-            String pageName,
-            DashboardAskObjectRef objectRef
-    ) {
+    public DashboardAskPreloadedPayload getCached(String role,
+                                                  Long operatorUserId,
+                                                  Long targetUserId,
+                                                  String pageName,
+                                                  DashboardAskObjectRef objectRef) {
         String cacheKey = buildCacheKey(role, operatorUserId, targetUserId, pageName, objectRef);
         DashboardAskPreloadedPayload payload = dashboardPreloadCacheService.get(cacheKey);
-        return payload == null ? null : copyPayload(payload);
+        if (payload == null) {
+            return null;
+        }
+        DashboardAskPreloadedPayload copied = copyPayload(payload);
+        copied.setPreloadSource("redis");
+        return copied;
     }
 
     @Override
-    public void evict(
-            String role,
-            Long operatorUserId,
-            Long targetUserId,
-            String pageName,
-            DashboardAskObjectRef objectRef
-    ) {
+    public void evict(String role,
+                      Long operatorUserId,
+                      Long targetUserId,
+                      String pageName,
+                      DashboardAskObjectRef objectRef) {
         dashboardPreloadCacheService.evict(buildCacheKey(role, operatorUserId, targetUserId, pageName, objectRef));
     }
 
-    private DashboardAskPreloadedPayload buildPayload(
-            String role,
-            Long operatorUserId,
-            Long targetUserId,
-            String pageName,
-            DashboardAskObjectRef objectRef,
-            Map<String, Object> context
-    ) {
+    private DashboardAskPreloadedPayload buildPayload(String role,
+                                                      Long operatorUserId,
+                                                      Long targetUserId,
+                                                      String pageName,
+                                                      DashboardAskObjectRef objectRef,
+                                                      Map<String, Object> context) {
+
         Long effectiveTargetUserId = ROLE_USER.equalsIgnoreCase(role)
                 ? operatorUserId
                 : (targetUserId != null ? targetUserId : operatorUserId);
 
-        Map<String, Object> learningContext = dashboardLearningContextService.buildLearningContext(
-                role,
-                operatorUserId,
-                effectiveTargetUserId,
-                pageName,
-                objectRef
+        Map<String, Object> learningContext = safeMap(
+                dashboardLearningContextService.buildLearningContext(
+                        role, operatorUserId, effectiveTargetUserId, pageName, objectRef
+                )
         );
 
         DashboardAskPreloadedPayload payload = new DashboardAskPreloadedPayload();
@@ -148,7 +145,80 @@ public class DashboardPreloadServiceImpl implements DashboardPreloadService {
         payload.setRecentQuestions(extractRecentQuestions(learningContext));
         payload.setRecentPassages(extractRecentPassages(learningContext));
         payload.setAggregates(buildAggregates(payload, learningContext, context, pageName, role, effectiveTargetUserId));
+
+        payload.setLearningContext(learningContext);
+        payload.setQuestionContext(extractQuestionContext(learningContext));
+        payload.setAvailableScopes(buildAvailableScopes(payload));
+        payload.setPreloadSource("database");
+
         return payload;
+    }
+
+    private List<String> buildAvailableScopes(DashboardAskPreloadedPayload payload) {
+        List<String> scopes = new ArrayList<>();
+        if (payload.getOverview() != null) {
+            scopes.add(SCOPE_PRELOAD_OVERVIEW);
+        }
+        if (payload.getProgressSummary() != null) {
+            scopes.add(SCOPE_PROGRESS_SUMMARY);
+        }
+        if (payload.getRecentRecords() != null) {
+            scopes.add(SCOPE_RECENT_RECORDS);
+        }
+        if (payload.getModuleStats() != null) {
+            scopes.add(SCOPE_MODULE_STATS);
+        }
+        if (payload.getLearningContext() != null && !payload.getLearningContext().isEmpty()) {
+            scopes.add(SCOPE_LEARNING_CONTEXT);
+        }
+        if (payload.getQuestionContext() != null && !payload.getQuestionContext().isEmpty()) {
+            scopes.add(SCOPE_QUESTION_CONTEXT);
+        }
+        return scopes;
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> extractQuestionContext(Map<String, Object> learningContext) {
+        if (learningContext == null || learningContext.isEmpty()) {
+            return new LinkedHashMap<>();
+        }
+        Object value = learningContext.get("questionContext");
+        if (value instanceof Map<?, ?> map && !map.isEmpty()) {
+            return new LinkedHashMap<>((Map<String, Object>) map);
+        }
+        return new LinkedHashMap<>(learningContext);
+    }
+
+    private long chooseTtl(String pageName, DashboardAskObjectRef objectRef) {
+        return isDetailOnlyPage(pageName) || objectRef != null ? DETAIL_TTL_MILLIS : PAGE_TTL_MILLIS;
+    }
+
+    private boolean isDetailOnlyPage(String pageName) {
+        return pageName != null && pageName.trim().toLowerCase().contains(PAGE_NAME_DETAIL);
+    }
+
+    private DashboardAskPreloadedPayload copyPayload(DashboardAskPreloadedPayload source) {
+        DashboardAskPreloadedPayload target = new DashboardAskPreloadedPayload();
+        BeanUtils.copyProperties(source, target);
+        target.setAggregates(safeMap(source.getAggregates()));
+        target.setLearningContext(safeMap(source.getLearningContext()));
+        target.setQuestionContext(safeMap(source.getQuestionContext()));
+        target.setAvailableScopes(source.getAvailableScopes() == null ? new ArrayList<>() : new ArrayList<>(source.getAvailableScopes()));
+        target.setRecentQuestions(source.getRecentQuestions() == null ? new ArrayList<>() : new ArrayList<>(source.getRecentQuestions()));
+        target.setRecentPassages(source.getRecentPassages() == null ? new ArrayList<>() : new ArrayList<>(source.getRecentPassages()));
+        return target;
+    }
+
+    private Map<String, Object> safeMap(Map<String, Object> source) {
+        return source == null ? new LinkedHashMap<>() : new LinkedHashMap<>(source);
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Object> castList(Object data) {
+        if (data instanceof List<?> list) {
+            return new ArrayList<>((List<Object>) list);
+        }
+        return new ArrayList<>();
     }
 
     private DashboardCapability resolveOverviewCapability(String role) {
@@ -175,144 +245,90 @@ public class DashboardPreloadServiceImpl implements DashboardPreloadService {
                 : DashboardCapability.ADMIN_MODULE_STATS;
     }
 
-    private Object loadCapability(
-            String role,
-            Long operatorUserId,
-            Long targetUserId,
-            DashboardCapability capability
-    ) {
-        try {
-            DashboardAgentContext agentContext = DashboardAgentContext.builder()
-                    .role(role)
-                    .operatorUserId(operatorUserId)
-                    .targetUserId(targetUserId)
-                    .originalQuery(PRELOAD_QUERY)
-                    .filters(Map.of())
-                    .build();
-            return capabilityRouter.route(capability, agentContext);
-        } catch (Exception e) {
-            log.debug("Dashboard preload capability skipped, capability={}, reason={}", capability, e.getMessage());
-            return null;
-        }
+    private Object loadCapability(String role, Long operatorUserId, Long targetUserId, DashboardCapability capability) {
+        return capabilityRouter.route(capability, DashboardAgentContext.builder()
+                .role(role)
+                .operatorUserId(operatorUserId)
+                .targetUserId(targetUserId)
+                .filters(new LinkedHashMap<>())
+                .build());
     }
 
+    @SuppressWarnings("unchecked")
     private List<Map<String, Object>> extractRecentQuestions(Map<String, Object> learningContext) {
-        if (learningContext == null) {
-            return List.of();
+        if (learningContext == null || learningContext.isEmpty()) {
+            return List.<Map<String, Object>>of();
         }
+
         Object questions = learningContext.get("recordQuestions");
-        if (!(questions instanceof List<?> list)) {
-            return List.of();
+        if (!(questions instanceof List<?> list) || list.isEmpty()) {
+            return List.<Map<String, Object>>of();
         }
 
         List<Map<String, Object>> result = new ArrayList<>();
         for (Object item : list) {
-            if (item instanceof Map<?, ?> map) {
-                result.add(new LinkedHashMap<>(castMap(map)));
-                if (result.size() >= MAX_RECENT_QUESTION_COUNT) {
-                    break;
-                }
+            if (item instanceof Map<?, ?> map && !map.isEmpty()) {
+                result.add(new LinkedHashMap<>((Map<String, Object>) map));
             }
         }
         return result;
     }
 
+    @SuppressWarnings("unchecked")
     private List<Map<String, Object>> extractRecentPassages(Map<String, Object> learningContext) {
-        if (learningContext == null) {
-            return List.of();
+        if (learningContext == null || learningContext.isEmpty()) {
+            return List.<Map<String, Object>>of();
         }
+
         Object passage = learningContext.get("passage");
-        if (passage instanceof Map<?, ?> map && !map.isEmpty()) {
-            return List.of(new LinkedHashMap<>(castMap(map)));
+        if (!(passage instanceof Map<?, ?> map) || map.isEmpty()) {
+            return List.<Map<String, Object>>of();
         }
-        return List.of();
+
+        Map<String, Object> row = new LinkedHashMap<>((Map<String, Object>) map);
+        return List.of(row);
     }
 
-    private Map<String, Object> buildAggregates(
-            DashboardAskPreloadedPayload payload,
-            Map<String, Object> learningContext,
-            Map<String, Object> context,
-            String pageName,
-            String role,
-            Long targetUserId
-    ) {
-        Map<String, Object> aggregates = new LinkedHashMap<>();
-        aggregates.put("hasOverview", payload.getOverview() != null);
-        aggregates.put("hasProgressSummary", payload.getProgressSummary() != null);
-        aggregates.put("recentRecordCount", payload.getRecentRecords() == null ? 0 : payload.getRecentRecords().size());
-        aggregates.put("moduleStatCount", payload.getModuleStats() == null ? 0 : payload.getModuleStats().size());
-        aggregates.put("recentQuestionCount", payload.getRecentQuestions() == null ? 0 : payload.getRecentQuestions().size());
-        aggregates.put("recentPassageCount", payload.getRecentPassages() == null ? 0 : payload.getRecentPassages().size());
-        aggregates.put("hasLearningContext", learningContext != null && !learningContext.isEmpty());
-        aggregates.put("pageName", safeString(pageName));
-        aggregates.put("role", safeString(role));
-        aggregates.put("targetUserId", targetUserId);
-        if (context != null && !context.isEmpty()) {
-            aggregates.put("requestContext", new LinkedHashMap<>(context));
-        }
-        return aggregates;
-    }
-
-    private long chooseTtl(String pageName, DashboardAskObjectRef objectRef) {
-        return isDetailOnlyPage(pageName) || objectRef != null
-                ? DETAIL_TTL_MILLIS
-                : PAGE_TTL_MILLIS;
-    }
-
-    private boolean isDetailOnlyPage(String pageName) {
-        return safeString(pageName).toLowerCase().contains(PAGE_NAME_DETAIL);
-    }
-
-    private String buildCacheKey(
-            String role,
-            Long operatorUserId,
-            Long targetUserId,
-            String pageName,
-            DashboardAskObjectRef objectRef
-    ) {
-        StringBuilder sb = new StringBuilder();
-        sb.append(safeString(role)).append(':')
-                .append(operatorUserId).append(':')
-                .append(targetUserId).append(':')
-                .append(safeString(pageName));
-
-        if (objectRef != null) {
-            sb.append(':').append(safeString(objectRef.getModule()))
-                    .append(':').append(safeString(objectRef.getObjectType()))
-                    .append(':').append(objectRef.getTestId())
-                    .append(':').append(objectRef.getPassageId())
-                    .append(':').append(objectRef.getQuestionId())
-                    .append(':').append(objectRef.getRecordId())
-                    .append(':').append(objectRef.getQuestionNumber())
-                    .append(':').append(safeString(objectRef.getSessionId()));
-        }
-        return sb.toString();
-    }
-
-    private DashboardAskPreloadedPayload copyPayload(DashboardAskPreloadedPayload source) {
-        if (source == null) {
-            return null;
-        }
-        DashboardAskPreloadedPayload target = new DashboardAskPreloadedPayload();
-        BeanUtils.copyProperties(source, target);
-        return target;
-    }
-
-    @SuppressWarnings("unchecked")
-    private List<?> castList(Object value) {
-        return value instanceof List<?> list ? list : List.of();
-    }
-
-    @SuppressWarnings("unchecked")
-    private Map<String, Object> castMap(Map<?, ?> map) {
+    private Map<String, Object> buildAggregates(DashboardAskPreloadedPayload payload,
+                                                Map<String, Object> learningContext,
+                                                Map<String, Object> context,
+                                                String pageName,
+                                                String role,
+                                                Long effectiveTargetUserId) {
         Map<String, Object> result = new LinkedHashMap<>();
-        for (Map.Entry<?, ?> entry : map.entrySet()) {
-            result.put(String.valueOf(entry.getKey()), entry.getValue());
+        result.put("page_name", pageName);
+        result.put("role", role);
+        result.put("target_user_id", effectiveTargetUserId);
+        result.put("has_learning_context", learningContext != null && !learningContext.isEmpty());
+        result.put("has_question_context", payload.getQuestionContext() != null && !payload.getQuestionContext().isEmpty());
+        if (context != null && !context.isEmpty()) {
+            result.put("request_context", context);
         }
         return result;
     }
 
-    private String safeString(String value) {
-        return value == null ? "" : value.trim();
+    private String buildCacheKey(String role,
+                                 Long operatorUserId,
+                                 Long targetUserId,
+                                 String pageName,
+                                 DashboardAskObjectRef objectRef) {
+        String module = objectRef == null ? "none" : safe(objectRef.getModule());
+        String objectType = objectRef == null ? "none" : safe(objectRef.getObjectType());
+        String recordId = objectRef == null || objectRef.getRecordId() == null ? "none" : String.valueOf(objectRef.getRecordId());
+        String questionId = objectRef == null || objectRef.getQuestionId() == null ? "none" : String.valueOf(objectRef.getQuestionId());
+        return String.join(":",
+                safe(role),
+                String.valueOf(operatorUserId),
+                String.valueOf(targetUserId),
+                safe(pageName),
+                module,
+                objectType,
+                recordId,
+                questionId
+        );
+    }
+
+    private String safe(String value) {
+        return value == null || value.isBlank() ? "none" : value.trim().toLowerCase();
     }
 }

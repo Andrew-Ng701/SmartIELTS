@@ -4,9 +4,12 @@
         "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.andrew.smartielts.listening.mapper.ListeningQuestionMapper">
 
-    <resultMap id="ListeningQuestionResultMap" type="com.andrew.smartielts.listening.domain.pojo.ListeningQuestion">
+    <resultMap id="ListeningQuestionResultMap"
+               type="com.andrew.smartielts.listening.domain.pojo.ListeningQuestion">
         <id column="id" property="id"/>
         <result column="test_id" property="testId"/>
+        <result column="part_group_id" property="partGroupId"/>
+        <result column="material_id" property="materialId"/>
         <result column="section_number" property="sectionNumber"/>
         <result column="question_number" property="questionNumber"/>
         <result column="question_type" property="questionType"/>
@@ -15,28 +18,36 @@
         <result column="correct_answer" property="correctAnswer"/>
         <result column="options_json" property="optionsJson"/>
         <result column="accepted_answers_json" property="acceptedAnswersJson"/>
+        <result column="case_insensitive" property="caseInsensitive"/>
+        <result column="ignore_whitespace" property="ignoreWhitespace"/>
+        <result column="ignore_punctuation" property="ignorePunctuation"/>
         <result column="display_order" property="displayOrder"/>
         <result column="score" property="score"/>
         <result column="is_deleted" property="isDeleted"/>
     </resultMap>
 
     <sql id="Base_Column_List">
-        id, test_id, section_number, question_number, question_type, answer_mode,
-        question_text, correct_answer, options_json, accepted_answers_json,
-        display_order, score, is_deleted
+        id, test_id, part_group_id, material_id, section_number, question_number,
+        question_type, answer_mode, question_text, correct_answer, options_json,
+        accepted_answers_json, case_insensitive, ignore_whitespace,
+        ignore_punctuation, display_order, score, is_deleted
     </sql>
 
     <insert id="insertListeningQuestion"
             parameterType="com.andrew.smartielts.listening.domain.pojo.ListeningQuestion"
-            useGeneratedKeys="true" keyProperty="id" keyColumn="id">
+            useGeneratedKeys="true"
+            keyProperty="id"
+            keyColumn="id">
         insert into listening_question (
-        test_id, section_number, question_number, question_type, answer_mode,
-        question_text, correct_answer, options_json, accepted_answers_json,
-        display_order, score, is_deleted
+        test_id, part_group_id, material_id, section_number, question_number,
+        question_type, answer_mode, question_text, correct_answer, options_json,
+        accepted_answers_json, case_insensitive, ignore_whitespace,
+        ignore_punctuation, display_order, score, is_deleted
         ) values (
-        #{testId}, #{sectionNumber}, #{questionNumber}, #{questionType}, #{answerMode},
-        #{questionText}, #{correctAnswer}, #{optionsJson}, #{acceptedAnswersJson},
-        #{displayOrder}, #{score}, 0
+        #{testId}, #{partGroupId}, #{materialId}, #{sectionNumber}, #{questionNumber},
+        #{questionType}, #{answerMode}, #{questionText}, #{correctAnswer}, #{optionsJson},
+        #{acceptedAnswersJson}, #{caseInsensitive}, #{ignoreWhitespace},
+        #{ignorePunctuation}, #{displayOrder}, #{score}, 0
         )
     </insert>
 
@@ -45,12 +56,14 @@
         from listening_question
         where id = #{id}
         and is_deleted = 0
+        limit 1
     </select>
 
     <select id="findAnyById" resultMap="ListeningQuestionResultMap">
         select <include refid="Base_Column_List"/>
         from listening_question
         where id = #{id}
+        limit 1
     </select>
 
     <select id="findActiveByTestId" resultMap="ListeningQuestionResultMap">
@@ -71,7 +84,9 @@
     <update id="updateListeningQuestion"
             parameterType="com.andrew.smartielts.listening.domain.pojo.ListeningQuestion">
         update listening_question
-        set section_number = #{sectionNumber},
+        set part_group_id = #{partGroupId},
+        material_id = #{materialId},
+        section_number = #{sectionNumber},
         question_number = #{questionNumber},
         question_type = #{questionType},
         answer_mode = #{answerMode},
@@ -79,6 +94,9 @@
         correct_answer = #{correctAnswer},
         options_json = #{optionsJson},
         accepted_answers_json = #{acceptedAnswersJson},
+        case_insensitive = #{caseInsensitive},
+        ignore_whitespace = #{ignoreWhitespace},
+        ignore_punctuation = #{ignorePunctuation},
         display_order = #{displayOrder},
         score = #{score}
         where id = #{id}
@@ -111,4 +129,5 @@
         where test_id = #{testId}
         and is_deleted = 1
     </update>
+
 </mapper>

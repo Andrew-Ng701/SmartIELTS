@@ -45,7 +45,7 @@ public class DashScopeDashboardSqlLlmClient implements DashboardSqlLlmClient {
 
             ChatCompletionsRequest payload = new ChatCompletionsRequest();
             payload.setModel(llmProperties.getModel());
-            payload.setTemperature(0.0);
+            payload.setTemperature(0.0D);
             payload.setEnableThinking(false);
             payload.setMessages(List.of(
                     new ChatMessage("system", buildSqlSystemPrompt()),
@@ -58,13 +58,8 @@ public class DashScopeDashboardSqlLlmClient implements DashboardSqlLlmClient {
             headers.setBearerAuth(llmProperties.getApiKey());
 
             HttpEntity<ChatCompletionsRequest> entity = new HttpEntity<>(payload, headers);
-
-            ResponseEntity<ChatCompletionsResponse> response = restTemplate.exchange(
-                    url,
-                    HttpMethod.POST,
-                    entity,
-                    ChatCompletionsResponse.class
-            );
+            ResponseEntity<ChatCompletionsResponse> response =
+                    restTemplate.exchange(url, HttpMethod.POST, entity, ChatCompletionsResponse.class);
 
             String content = extractContent(response.getBody());
             DashboardSqlGenerationResult result = objectMapper.readValue(content, DashboardSqlGenerationResult.class);
@@ -83,7 +78,7 @@ public class DashScopeDashboardSqlLlmClient implements DashboardSqlLlmClient {
 
             ChatCompletionsRequest payload = new ChatCompletionsRequest();
             payload.setModel(llmProperties.getModel());
-            payload.setTemperature(0.0);
+            payload.setTemperature(0.0D);
             payload.setEnableThinking(false);
             payload.setMessages(List.of(
                     new ChatMessage("system", buildReviewSystemPrompt()),
@@ -96,13 +91,8 @@ public class DashScopeDashboardSqlLlmClient implements DashboardSqlLlmClient {
             headers.setBearerAuth(llmProperties.getApiKey());
 
             HttpEntity<ChatCompletionsRequest> entity = new HttpEntity<>(payload, headers);
-
-            ResponseEntity<ChatCompletionsResponse> response = restTemplate.exchange(
-                    url,
-                    HttpMethod.POST,
-                    entity,
-                    ChatCompletionsResponse.class
-            );
+            ResponseEntity<ChatCompletionsResponse> response =
+                    restTemplate.exchange(url, HttpMethod.POST, entity, ChatCompletionsResponse.class);
 
             String content = extractContent(response.getBody());
             DashboardSqlReviewResult result = objectMapper.readValue(content, DashboardSqlReviewResult.class);
@@ -115,46 +105,33 @@ public class DashScopeDashboardSqlLlmClient implements DashboardSqlLlmClient {
     }
 
     private String buildSqlSystemPrompt() {
-        return DashboardSqlPromptConstants.DASHSCOPE_SQL_GENERATION_SYSTEM_PROMPT
-                + "\n\n"
-                + DashboardSqlFewShotConstants.DASHSCOPE_SQL_GENERATION_FEW_SHOTS;
+        return DashboardSqlPromptConstants.DASH_SCOPE_SQL_GENERATION_SYSTEM_PROMPT
+                + "\n"
+                + DashboardSqlFewShotConstants.DASH_SCOPE_SQL_GENERATION_FEW_SHOT;
     }
 
     private String buildReviewSystemPrompt() {
-        return DashboardSqlPromptConstants.DASHSCOPE_SQL_REVIEW_SYSTEM_PROMPT;
+        return DashboardSqlPromptConstants.DASH_SCOPE_SQL_GENERATION_SYSTEM_PROMPT;
     }
 
     private String buildSqlUserPrompt(DashboardSqlGenerationRequest request) {
-        return DashboardSqlPromptTemplates.DASHSCOPE_SQL_GENERATION_USER_PROMPT_TEMPLATE.formatted(
-                safe(request.getRole()),
+        return DashboardSqlPromptTemplates.DASH_SCOPE_SQL_GENERATION_USER_PROMPT_TEMPLATE.formatted(
+                safeString(request.getRole()),
                 String.valueOf(request.getOperatorUserId()),
                 String.valueOf(request.getTargetUserId()),
-                safe(request.getOriginalQuery()),
+                safeString(request.getOriginalQuery()),
                 toJson(request.getIntent() == null ? Map.of() : request.getIntent()),
                 toJson(request.getContext() == null ? Map.of() : request.getContext())
         );
     }
 
     private String buildReviewUserPrompt(DashboardSqlReviewRequest request) {
-        return """
-            Review the current SQL-backed dashboard answer.
-
-            role: %s
-            operatorUserId: %s
-            targetUserId: %s
-            responseLanguage: %s
-            originalQuery: %s
-            intentJson: %s
-            sqlPlanJson: %s
-            rowsJson: %s
-
-            Return JSON only.
-            """.formatted(
-                safe(request.getRole()),
+        return DashboardSqlPromptTemplates.DASH_SCOPE_SQL_REVIEW_USER_PROMPT_TEMPLATE.formatted(
+                safeString(request.getRole()),
                 String.valueOf(request.getOperatorUserId()),
                 String.valueOf(request.getTargetUserId()),
-                safe(request.getResponseLanguage()),
-                safe(request.getOriginalQuery()),
+                safeString(request.getResponseLanguage()),
+                safeString(request.getOriginalQuery()),
                 toJson(request.getIntent() == null ? Map.of() : request.getIntent()),
                 toJson(request.getSqlPlan() == null ? Map.of() : request.getSqlPlan()),
                 toJson(request.getRows() == null ? List.of() : request.getRows())
@@ -175,7 +152,7 @@ public class DashScopeDashboardSqlLlmClient implements DashboardSqlLlmClient {
     private ResponseFormat buildSqlReviewResponseFormat() {
         JsonSchema jsonSchema = new JsonSchema();
         jsonSchema.setName(DashboardSqlResponseFormatConstants.SQL_REVIEW_SCHEMA_NAME);
-        jsonSchema.setSchema(readSchemaAsMap(DashboardSqlSchemaConstants.DASHSCOPE_SQL_REVIEW_JSON_SCHEMA));
+        jsonSchema.setSchema(readSchemaAsMap(DashboardSqlSchemaConstants.DASHSCOPE_SQL_GENERATION_JSON_SCHEMA));
 
         ResponseFormat responseFormat = new ResponseFormat();
         responseFormat.setType(DashboardSqlResponseFormatConstants.RESPONSE_FORMAT_TYPE);
@@ -211,7 +188,6 @@ public class DashScopeDashboardSqlLlmClient implements DashboardSqlLlmClient {
         if (result == null) {
             throw new IllegalStateException("Dashboard SQL generation result is null");
         }
-
         if (result.getSuccess() == null) {
             result.setSuccess(Boolean.TRUE);
         }
@@ -224,30 +200,17 @@ public class DashScopeDashboardSqlLlmClient implements DashboardSqlLlmClient {
         if (result.getExpectedColumns() == null) {
             result.setExpectedColumns(List.of());
         }
-        if (result.getQueryPurpose() == null || result.getQueryPurpose().isBlank()) {
+        if (isBlank(result.getQueryPurpose())) {
             result.setQueryPurpose("structured_dashboard_query");
         }
-        if (result.getReasoningSummary() == null || result.getReasoningSummary().isBlank()) {
-            result.setReasoningSummary("SQL plan generated by DashScope.");
+        if (isBlank(result.getReasoningSummary())) {
+            result.setReasoningSummary("Generated by DashScope SQL planner.");
         }
         if (result.getConfidence() == null) {
             result.setConfidence(0.0D);
         }
         if (result.getSuggestions() == null) {
             result.setSuggestions(List.of());
-        }
-
-        if (request.getTargetUserId() != null && !result.getParams().containsKey("targetUserId")) {
-            result.getParams().put("targetUserId", request.getTargetUserId());
-        }
-
-        Object limit = result.getParams().get("limit");
-        if (limit == null && request.getContext() != null && request.getContext().containsKey("limit")) {
-            result.getParams().put("limit", request.getContext().get("limit"));
-        }
-
-        if (result.getSql() != null) {
-            result.setSql(result.getSql().trim());
         }
     }
 
@@ -256,22 +219,12 @@ public class DashScopeDashboardSqlLlmClient implements DashboardSqlLlmClient {
         if (result == null) {
             throw new IllegalStateException("Dashboard SQL review result is null");
         }
-
-        if (result.getAnswer() == null || result.getAnswer().isBlank()) {
-            result.setAnswer("目前已取得查詢結果，但無法生成完整說明。");
-        }
-        if (result.getData() == null) {
-            result.setData(request.getRows() == null ? List.of() : request.getRows());
-        }
         if (result.getSuggestions() == null) {
             result.setSuggestions(List.of());
         }
         if (result.getMeta() == null) {
             result.setMeta(new LinkedHashMap<>());
         }
-
-        result.getMeta().putIfAbsent("reviewAction", "PARTIAL");
-        result.getMeta().putIfAbsent("reviewSummary", "Review result normalized by backend.");
     }
 
     private DashboardSqlGenerationResult fallbackGenerationResult(DashboardSqlGenerationRequest request,
@@ -280,44 +233,33 @@ public class DashScopeDashboardSqlLlmClient implements DashboardSqlLlmClient {
         result.setSuccess(Boolean.FALSE);
         result.setSql("");
         result.setParams(new LinkedHashMap<>());
-        if (request != null && request.getTargetUserId() != null) {
-            result.getParams().put("targetUserId", request.getTargetUserId());
-        }
         result.setExpectedColumns(List.of());
-        result.setQueryPurpose("generation_failed");
-        result.setReasoningSummary("DashScope SQL generation failed: " + safe(e.getMessage()));
+        result.setQueryPurpose("structured_dashboard_query");
+        result.setReasoningSummary("DashScope SQL generation failed: " + safeString(e.getMessage()));
         result.setConfidence(0.0D);
-        result.setSuggestions(List.of(
-                "請改成更明確的 dashboard 查詢",
-                "例如：最近 10 筆紀錄",
-                "例如：比較四科平均分"
-        ));
+        result.setSuggestions(List.of());
         return result;
     }
 
     private DashboardSqlReviewResult fallbackReviewResult(DashboardSqlReviewRequest request,
                                                           Exception e) {
         DashboardSqlReviewResult result = new DashboardSqlReviewResult();
-        result.setAnswer("已完成資料查詢，但 AI review 失敗，請先直接查看返回資料。");
-        result.setData(request == null || request.getRows() == null ? List.of() : request.getRows());
-        result.setSuggestions(List.of(
-                "改問更具體的問題",
-                "例如：哪一科平均分最低",
-                "例如：最近 30 天有幾筆紀錄"
-        ));
-
-        Map<String, Object> meta = new LinkedHashMap<>();
-        meta.put("reviewAction", "PARTIAL");
-        meta.put("reviewSummary", "DashScope SQL review failed: " + safe(e.getMessage()));
-        result.setMeta(meta);
+        result.setAnswer(detectResponseLanguage(request.getOriginalQuery()).equals("zh-Hant")
+                ? "我已完成資料查詢，但目前無法生成更自然的 SQL 解讀回覆。你可以先查看下方查詢結果。"
+                : "The query completed, but natural-language SQL review is temporarily unavailable. Please check the returned rows.");
+        result.setData(request.getRows());
+        result.setSuggestions(List.of());
+        result.setMeta(new LinkedHashMap<>());
+        result.getMeta().put("reason", "sql_review_fallback");
+        result.getMeta().put("message", safeString(e.getMessage()));
         return result;
     }
 
     private String toJson(Object value) {
         try {
-            return objectMapper.writeValueAsString(value);
+            return objectMapper.writeValueAsString(value == null ? Map.of() : value);
         } catch (JsonProcessingException e) {
-            return "{}";
+            throw new IllegalStateException("Failed to serialize dashboard SQL request payload", e);
         }
     }
 
@@ -328,7 +270,28 @@ public class DashScopeDashboardSqlLlmClient implements DashboardSqlLlmClient {
         return baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
     }
 
-    private String safe(String value) {
+    private String detectResponseLanguage(String query) {
+        if (query == null || query.isBlank()) {
+            return "zh-Hant";
+        }
+        int chineseCount = 0;
+        int englishCount = 0;
+        for (int i = 0; i < query.length(); i++) {
+            char ch = query.charAt(i);
+            if (ch >= '\u4E00' && ch <= '\u9FFF') {
+                chineseCount++;
+            } else if ((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z')) {
+                englishCount++;
+            }
+        }
+        return englishCount > chineseCount ? "en" : "zh-Hant";
+    }
+
+    private boolean isBlank(String value) {
+        return value == null || value.isBlank();
+    }
+
+    private String safeString(String value) {
         return value == null ? "" : value;
     }
 

@@ -1,90 +1,156 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <!DOCTYPE mapper
         PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
-        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.andrew.smartielts.reading.mapper.ReadingPassageMapper">
 
-    <resultMap id="BaseMap" type="com.andrew.smartielts.reading.domain.pojo.ReadingPassage">
+    <resultMap id="ReadingPassageResultMap" type="com.andrew.smartielts.reading.domain.pojo.ReadingPassage">
         <id column="id" property="id"/>
         <result column="test_id" property="testId"/>
+        <result column="part_group_id" property="partGroupId"/>
+        <result column="passage_no" property="passageNo"/>
         <result column="title" property="title"/>
         <result column="content" property="content"/>
+        <result column="material_type" property="materialType"/>
+        <result column="display_order" property="displayOrder"/>
         <result column="is_deleted" property="isDeleted"/>
     </resultMap>
+
+    <sql id="BaseColumnList">
+        id,
+        test_id,
+        part_group_id,
+        passage_no,
+        title,
+        content,
+        material_type,
+        display_order,
+        is_deleted
+    </sql>
 
     <insert id="insertReadingPassage"
             parameterType="com.andrew.smartielts.reading.domain.pojo.ReadingPassage"
             useGeneratedKeys="true"
-            keyProperty="id">
-        insert into reading_passage (
-            test_id, title, content, is_deleted
-        ) values (
-                     #{testId}, #{title}, #{content}, 0
-                 )
+            keyProperty="id"
+            keyColumn="id">
+        INSERT INTO reading_passage (
+        test_id,
+        part_group_id,
+        passage_no,
+        title,
+        content,
+        material_type,
+        display_order,
+        is_deleted
+        ) VALUES (
+        #{testId},
+        #{partGroupId},
+        #{passageNo},
+        #{title},
+        #{content},
+        #{materialType},
+        #{displayOrder},
+        0
+        )
     </insert>
 
-    <select id="findActiveById" resultMap="BaseMap">
-        select *
-        from reading_passage
-        where id = #{id}
-          and is_deleted = 0
+    <select id="findActiveById" resultMap="ReadingPassageResultMap">
+        SELECT <include refid="BaseColumnList"/>
+        FROM reading_passage
+        WHERE id = #{id}
+        AND is_deleted = 0
+        LIMIT 1
     </select>
 
-    <select id="findAnyById" resultMap="BaseMap">
-        select *
-        from reading_passage
-        where id = #{id}
+    <select id="findAnyById" resultMap="ReadingPassageResultMap">
+        SELECT <include refid="BaseColumnList"/>
+        FROM reading_passage
+        WHERE id = #{id}
+        LIMIT 1
     </select>
 
-    <select id="findActiveByTestId" resultMap="BaseMap">
-        select *
-        from reading_passage
-        where test_id = #{testId}
-          and is_deleted = 0
-        order by id asc
+    <select id="findActiveByTestId" resultMap="ReadingPassageResultMap">
+        SELECT <include refid="BaseColumnList"/>
+        FROM reading_passage
+        WHERE test_id = #{testId}
+        AND is_deleted = 0
+        ORDER BY passage_no ASC, display_order ASC, id ASC
     </select>
 
-    <select id="findAnyByTestId" resultMap="BaseMap">
-        select *
-        from reading_passage
-        where test_id = #{testId}
-        order by id asc
+    <select id="findAnyByTestId" resultMap="ReadingPassageResultMap">
+        SELECT <include refid="BaseColumnList"/>
+        FROM reading_passage
+        WHERE test_id = #{testId}
+        ORDER BY passage_no ASC, display_order ASC, id ASC
+    </select>
+
+    <select id="findActiveByPartGroupId" resultMap="ReadingPassageResultMap">
+        SELECT <include refid="BaseColumnList"/>
+        FROM reading_passage
+        WHERE part_group_id = #{partGroupId}
+        AND is_deleted = 0
+        ORDER BY passage_no ASC, display_order ASC, id ASC
+    </select>
+
+    <select id="findAnyByPartGroupId" resultMap="ReadingPassageResultMap">
+        SELECT <include refid="BaseColumnList"/>
+        FROM reading_passage
+        WHERE part_group_id = #{partGroupId}
+        ORDER BY passage_no ASC, display_order ASC, id ASC
     </select>
 
     <update id="updateReadingPassage"
             parameterType="com.andrew.smartielts.reading.domain.pojo.ReadingPassage">
-        update reading_passage
-        set title = #{title},
-            content = #{content}
-        where id = #{id}
+        UPDATE reading_passage
+        SET part_group_id = #{partGroupId},
+        passage_no = #{passageNo},
+        title = #{title},
+        content = #{content},
+        material_type = #{materialType},
+        display_order = #{displayOrder}
+        WHERE id = #{id}
     </update>
 
     <update id="softDeleteById">
-        update reading_passage
-        set is_deleted = 1
-        where id = #{id}
-          and is_deleted = 0
+        UPDATE reading_passage
+        SET is_deleted = 1
+        WHERE id = #{id}
+        AND is_deleted = 0
     </update>
 
     <update id="softDeleteByTestId">
-        update reading_passage
-        set is_deleted = 1
-        where test_id = #{testId}
-          and is_deleted = 0
+        UPDATE reading_passage
+        SET is_deleted = 1
+        WHERE test_id = #{testId}
+        AND is_deleted = 0
+    </update>
+
+    <update id="softDeleteByPartGroupId">
+        UPDATE reading_passage
+        SET is_deleted = 1
+        WHERE part_group_id = #{partGroupId}
+        AND is_deleted = 0
     </update>
 
     <update id="restoreById">
-        update reading_passage
-        set is_deleted = 0
-        where id = #{id}
-          and is_deleted = 1
+        UPDATE reading_passage
+        SET is_deleted = 0
+        WHERE id = #{id}
+        AND is_deleted = 1
     </update>
 
     <update id="restoreByTestId">
-        update reading_passage
-        set is_deleted = 0
-        where test_id = #{testId}
-          and is_deleted = 1
+        UPDATE reading_passage
+        SET is_deleted = 0
+        WHERE test_id = #{testId}
+        AND is_deleted = 1
+    </update>
+
+    <update id="restoreByPartGroupId">
+        UPDATE reading_passage
+        SET is_deleted = 0
+        WHERE part_group_id = #{partGroupId}
+        AND is_deleted = 1
     </update>
 
 </mapper>

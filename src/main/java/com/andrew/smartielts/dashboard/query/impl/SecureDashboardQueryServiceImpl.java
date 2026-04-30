@@ -44,6 +44,10 @@ public class SecureDashboardQueryServiceImpl implements SecureDashboardQueryServ
             return executeAiSql(request);
         }
 
+        if (request.getTemplateCode() == null) {
+            throw new IllegalArgumentException("templateCode is required when aiGenerated=false");
+        }
+
         long sqlStartedAt = System.currentTimeMillis();
         String sql = sqlTemplateRegistry.resolveSql(request);
         Map<String, Object> params = sqlTemplateRegistry.resolveParams(request);
@@ -69,49 +73,13 @@ public class SecureDashboardQueryServiceImpl implements SecureDashboardQueryServ
 
     private List<Map<String, Object>> executeAiSql(SecureDashboardQueryRequest request) {
         long startedAt = System.currentTimeMillis();
-
         String sql = request.getRawSql();
-        log.info("dashboard.secure.query.ai.start role={} operatorUserId={} targetUserId={} rawSql={} rawParams={}",
-                request.getRole(),
-                request.getOperatorUserId(),
-                request.getTargetUserId(),
-                safeSql(sql),
-                request.getParams());
 
         readOnlySqlGuard.validate(sql);
-        log.info("dashboard.secure.query.ai.readonly.validated role={} operatorUserId={} targetUserId={} elapsedMs={}",
-                request.getRole(),
-                request.getOperatorUserId(),
-                request.getTargetUserId(),
-                System.currentTimeMillis() - startedAt);
-
-        dashboardAiSqlPolicyGuard.validate(sql, request);
-        log.info("dashboard.secure.query.ai.policy.validated role={} operatorUserId={} targetUserId={} elapsedMs={}",
-                request.getRole(),
-                request.getOperatorUserId(),
-                request.getTargetUserId(),
-                System.currentTimeMillis() - startedAt);
 
         String rewrittenSql = dashboardSqlRewriter.rewrite(sql, request);
         Map<String, Object> params = buildSafeParams(request);
-
-        log.info("dashboard.secure.query.ai.jdbc.start role={} operatorUserId={} targetUserId={} rewrittenSql={} safeParams={}",
-                request.getRole(),
-                request.getOperatorUserId(),
-                request.getTargetUserId(),
-                safeSql(rewrittenSql),
-                params);
-
-        List<Map<String, Object>> rows = jdbcTemplate.queryForList(rewrittenSql, params);
-
-        log.info("dashboard.secure.query.ai.jdbc.done role={} operatorUserId={} targetUserId={} elapsedMs={} rowCount={}",
-                request.getRole(),
-                request.getOperatorUserId(),
-                request.getTargetUserId(),
-                System.currentTimeMillis() - startedAt,
-                rows == null ? 0 : rows.size());
-
-        return rows;
+        return jdbcTemplate.queryForList(rewrittenSql, params);
     }
 
     private Map<String, Object> buildSafeParams(SecureDashboardQueryRequest request) {
@@ -123,12 +91,16 @@ public class SecureDashboardQueryServiceImpl implements SecureDashboardQueryServ
         params.put("operatorUserId", request.getOperatorUserId());
         params.put("targetUserId", request.getTargetUserId());
 
+        params.put("operator_user_id", request.getOperatorUserId());
+        params.put("target_user_id", request.getTargetUserId());
+
         Object limit = params.get("limit");
-        int safeLimit = 20;
         if (limit instanceof Number number) {
-            safeLimit = Math.min(Math.max(number.intValue(), 1), 100);
+            params.put("limit", Math.min(Math.max(number.intValue(), 1), 100));
+        } else if (!params.containsKey("limit")) {
+            params.put("limit", 20);
         }
-        params.put("limit", safeLimit);
+
         return params;
     }
 

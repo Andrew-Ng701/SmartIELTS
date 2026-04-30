@@ -2,9 +2,11 @@
 <!DOCTYPE mapper
         PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
 <mapper namespace="com.andrew.smartielts.writing.mapper.WritingQuestionMapper">
 
-    <resultMap id="WritingQuestionMap" type="com.andrew.smartielts.writing.domain.pojo.WritingQuestion">
+    <resultMap id="WritingQuestionResultMap"
+               type="com.andrew.smartielts.writing.domain.pojo.WritingQuestion">
         <id property="id" column="id"/>
         <result property="taskType" column="task_type"/>
         <result property="title" column="title"/>
@@ -16,56 +18,130 @@
         <result property="createdTime" column="created_time"/>
     </resultMap>
 
-    <insert id="insert" parameterType="com.andrew.smartielts.writing.domain.pojo.WritingQuestion"
-            useGeneratedKeys="true" keyProperty="id">
-        insert into writing_question (
-            task_type, title, description, image_url, image_object_key, is_deleted, deleted_time, created_time
-        ) values (
-                     #{taskType}, #{title}, #{description}, #{imageUrl}, #{imageObjectKey}, #{isDeleted}, #{deletedTime}, #{createdTime}
-                 )
+    <sql id="BaseSelectColumns">
+        q.id,
+        q.task_type,
+        q.title,
+        q.description,
+        COALESCE(
+            (
+                SELECT bir.file_url
+                FROM biz_image_resource bir
+                WHERE bir.target_type = 'WRITING_QUESTION'
+                  AND bir.target_id = q.id
+                  AND bir.is_deleted = 0
+                ORDER BY bir.sort_order ASC, bir.id ASC
+                LIMIT 1
+            ),
+            q.image_url
+        ) AS image_url,
+        COALESCE(
+            (
+                SELECT bir.object_key
+                FROM biz_image_resource bir
+                WHERE bir.target_type = 'WRITING_QUESTION'
+                  AND bir.target_id = q.id
+                  AND bir.is_deleted = 0
+                ORDER BY bir.sort_order ASC, bir.id ASC
+                LIMIT 1
+            ),
+            q.image_object_key
+        ) AS image_object_key,
+        q.is_deleted,
+        q.deleted_time,
+        q.created_time
+    </sql>
+
+    <insert id="insert"
+            parameterType="com.andrew.smartielts.writing.domain.pojo.WritingQuestion"
+            useGeneratedKeys="true"
+            keyProperty="id">
+        INSERT INTO writing_question
+        (
+            task_type,
+            title,
+            description,
+            image_url,
+            image_object_key,
+            is_deleted,
+            deleted_time,
+            created_time
+        )
+        VALUES
+            (
+                #{taskType},
+                #{title},
+                #{description},
+                #{imageUrl},
+                #{imageObjectKey},
+                #{isDeleted},
+                #{deletedTime},
+                #{createdTime}
+            )
     </insert>
 
-    <update id="update" parameterType="com.andrew.smartielts.writing.domain.pojo.WritingQuestion">
-        update writing_question
-        set task_type = #{taskType},
+    <update id="update"
+            parameterType="com.andrew.smartielts.writing.domain.pojo.WritingQuestion">
+        UPDATE writing_question
+        SET
+            task_type = #{taskType},
             title = #{title},
             description = #{description},
             image_url = #{imageUrl},
             image_object_key = #{imageObjectKey}
-        where id = #{id}
+        WHERE id = #{id}
     </update>
 
-    <select id="findAll" resultMap="WritingQuestionMap">
-        select id, task_type, title, description, image_url, image_object_key, is_deleted, deleted_time, created_time
-        from writing_question
-        where is_deleted = 0
-        order by id desc
+    <select id="findAll" resultMap="WritingQuestionResultMap">
+        SELECT
+        <include refid="BaseSelectColumns"/>
+        FROM writing_question q
+        WHERE q.is_deleted = 0
+        ORDER BY q.created_time DESC, q.id DESC
     </select>
 
-    <select id="findById" resultMap="WritingQuestionMap">
-        select id, task_type, title, description, image_url, image_object_key, is_deleted, deleted_time, created_time
-        from writing_question
-        where id = #{id} and is_deleted = 0
+    <select id="findById" resultMap="WritingQuestionResultMap" parameterType="long">
+        SELECT
+        <include refid="BaseSelectColumns"/>
+        FROM writing_question q
+        WHERE q.id = #{id}
+        AND q.is_deleted = 0
+        LIMIT 1
     </select>
 
-    <select id="findByIdForAdmin" resultMap="WritingQuestionMap">
-        select id, task_type, title, description, image_url, image_object_key, is_deleted, deleted_time, created_time
-        from writing_question
-        where id = #{id}
+    <select id="findByIdForAdmin" resultMap="WritingQuestionResultMap" parameterType="long">
+        SELECT
+        <include refid="BaseSelectColumns"/>
+        FROM writing_question q
+        WHERE q.id = #{id}
+        LIMIT 1
     </select>
 
     <update id="logicalDeleteById">
-        update writing_question
-        set is_deleted = 1,
+        UPDATE writing_question
+        SET
+            is_deleted = 1,
             deleted_time = #{deletedTime}
-        where id = #{id} and is_deleted = 0
+        WHERE id = #{id}
+          AND is_deleted = 0
     </update>
 
-    <update id="restoreById">
-        update writing_question
-        set is_deleted = 0,
-            deleted_time = null
-        where id = #{id} and is_deleted = 1
+    <update id="restoreById" parameterType="long">
+        UPDATE writing_question
+        SET
+            is_deleted = 0,
+            deleted_time = NULL
+        WHERE id = #{id}
+          AND is_deleted = 1
     </update>
+
+    <select id="findNeedImageMigration" resultMap="WritingQuestionResultMap">
+        select
+        <include refid="BaseSelectColumns"/>
+        from writing_question
+        where image_target_migrated = 0
+        order by id asc
+    </select>
+
 
 </mapper>
