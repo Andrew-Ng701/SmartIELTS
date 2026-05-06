@@ -88,12 +88,17 @@ public class UserListeningServiceImpl implements UserListeningService {
                 .map(ListeningTest::getId)
                 .filter(Objects::nonNull)
                 .map(this::buildActiveTestDetailVO)
+                .filter(this::isFrontendReady)
                 .collect(Collectors.toList());
     }
 
     @Override
     public ListeningTestDetailVO getTestDetail(Long testId) {
-        return buildActiveTestDetailVO(testId);
+        ListeningTestDetailVO detailVO = buildActiveTestDetailVO(testId);
+        if (!isFrontendReady(detailVO)) {
+            throw new RuntimeException("Listening test is not ready");
+        }
+        return detailVO;
     }
 
     @Override
@@ -385,6 +390,53 @@ public class UserListeningServiceImpl implements UserListeningService {
         detailVO.setPartGroupAudios(findPartGroupAudios(audios));
         detailVO.setQuestions(questionVOList);
         return detailVO;
+    }
+
+    private boolean isFrontendReady(ListeningTestDetailVO detailVO) {
+        if (detailVO == null) {
+            return false;
+        }
+        return hasRenderableGroups(detailVO) && hasPlayableAudio(detailVO);
+    }
+
+    private boolean hasRenderableGroups(ListeningTestDetailVO detailVO) {
+        if (detailVO.getParts() == null || detailVO.getParts().isEmpty()) {
+            return false;
+        }
+        for (ListeningPartVO part : detailVO.getParts()) {
+            if (part == null || part.getGroups() == null || part.getGroups().isEmpty()) {
+                continue;
+            }
+            for (ListeningPartGroupVO group : part.getGroups()) {
+                if (group != null && group.getQuestions() != null && !group.getQuestions().isEmpty()) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private boolean hasPlayableAudio(ListeningTestDetailVO detailVO) {
+        if (detailVO.getTestAudio() != null) {
+            return true;
+        }
+        if (detailVO.getPartGroupAudios() != null && !detailVO.getPartGroupAudios().isEmpty()) {
+            return true;
+        }
+        if (detailVO.getParts() == null || detailVO.getParts().isEmpty()) {
+            return false;
+        }
+        for (ListeningPartVO part : detailVO.getParts()) {
+            if (part == null || part.getGroups() == null || part.getGroups().isEmpty()) {
+                continue;
+            }
+            for (ListeningPartGroupVO group : part.getGroups()) {
+                if (group != null && group.getAudios() != null && !group.getAudios().isEmpty()) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private ListeningRecordDetailVO buildRecordDetailVO(ListeningRecord record) {

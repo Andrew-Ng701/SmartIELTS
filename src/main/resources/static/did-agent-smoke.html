@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>D-ID Agent Smoke Test</title>
+    <style>
+        :root {
+            color-scheme: light;
+            --bg: #f6f7f9;
+            --panel: #ffffff;
+            --text: #1f2937;
+            --muted: #667085;
+            --border: #d7dce2;
+            --accent: #0f766e;
+            --accent-hover: #115e59;
+            --danger: #b42318;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            background: var(--bg);
+            color: var(--text);
+            font-family: Arial, Helvetica, sans-serif;
+        }
+
+        main {
+            width: min(1180px, calc(100vw - 32px));
+            margin: 0 auto;
+            padding: 24px 0;
+        }
+
+        h1 {
+            margin: 0 0 16px;
+            font-size: 24px;
+            font-weight: 700;
+            letter-spacing: 0;
+        }
+
+        .toolbar {
+            display: grid;
+            grid-template-columns: minmax(220px, 1fr) minmax(180px, 260px) auto;
+            gap: 12px;
+            align-items: end;
+            padding: 16px;
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+        }
+
+        label {
+            display: grid;
+            gap: 6px;
+            color: var(--muted);
+            font-size: 13px;
+            font-weight: 600;
+        }
+
+        input {
+            width: 100%;
+            height: 40px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 0 10px;
+            color: var(--text);
+            font: inherit;
+            background: #ffffff;
+        }
+
+        button {
+            height: 40px;
+            border: 0;
+            border-radius: 6px;
+            padding: 0 16px;
+            color: #ffffff;
+            background: var(--accent);
+            font: inherit;
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: var(--accent-hover);
+        }
+
+        .status {
+            min-height: 24px;
+            margin: 12px 0;
+            color: var(--muted);
+            font-size: 14px;
+        }
+
+        .status.error {
+            color: var(--danger);
+        }
+
+        #did-agent-container {
+            width: 100%;
+            min-height: 720px;
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        @media (max-width: 760px) {
+            main {
+                width: min(100vw - 20px, 1180px);
+                padding: 16px 0;
+            }
+
+            .toolbar {
+                grid-template-columns: 1fr;
+            }
+
+            #did-agent-container {
+                min-height: 640px;
+            }
+        }
+    </style>
+</head>
+<body>
+<main>
+    <h1>D-ID Agent Smoke Test</h1>
+
+    <form class="toolbar" id="agent-form">
+        <label>
+            Client key
+            <input id="client-key" name="clientKey" autocomplete="off" spellcheck="false"
+                   placeholder="Paste D-ID agent client key">
+        </label>
+        <label>
+            Agent ID
+            <input id="agent-id" name="agentId" autocomplete="off" spellcheck="false"
+                   value="v2_agt_kFp4XHyG">
+        </label>
+        <button type="submit">Load Agent</button>
+    </form>
+
+    <div class="status" id="status">Ready. Make sure this origin is allowed in D-ID Studio.</div>
+    <div id="did-agent-container"></div>
+</main>
+
+<script>
+    const form = document.getElementById("agent-form");
+    const clientKeyInput = document.getElementById("client-key");
+    const agentIdInput = document.getElementById("agent-id");
+    const statusEl = document.getElementById("status");
+    const container = document.getElementById("did-agent-container");
+    const storageKey = "smartielts.didAgentSmoke";
+
+    try {
+        const cached = JSON.parse(localStorage.getItem(storageKey) || "{}");
+        if (cached.clientKey) {
+            clientKeyInput.value = cached.clientKey;
+        }
+        if (cached.agentId) {
+            agentIdInput.value = cached.agentId;
+        }
+    } catch (ignored) {
+    }
+
+    form.addEventListener("submit", event => {
+        event.preventDefault();
+        loadAgent();
+    });
+
+    function loadAgent() {
+        const clientKey = clientKeyInput.value.trim();
+        const agentId = agentIdInput.value.trim();
+
+        statusEl.className = "status";
+        if (!clientKey || !agentId) {
+            statusEl.textContent = "Client key and agent ID are required.";
+            statusEl.classList.add("error");
+            return;
+        }
+
+        localStorage.setItem(storageKey, JSON.stringify({ clientKey, agentId }));
+
+        document.querySelectorAll("script[data-name='did-agent']").forEach(script => script.remove());
+        container.replaceChildren();
+
+        const script = document.createElement("script");
+        script.type = "module";
+        script.src = "https://agent.d-id.com/v2/index.js";
+        script.dataset.mode = "full";
+        script.dataset.clientKey = clientKey;
+        script.dataset.agentId = agentId;
+        script.dataset.name = "did-agent";
+        script.dataset.monitor = "true";
+        script.dataset.targetId = "did-agent-container";
+        script.onload = () => {
+            statusEl.textContent = "D-ID embed script loaded. Check the container and browser console for connection state.";
+        };
+        script.onerror = () => {
+            statusEl.textContent = "Failed to load D-ID embed script. Check network access and content-security policy.";
+            statusEl.classList.add("error");
+        };
+
+        document.body.appendChild(script);
+        statusEl.textContent = "Loading D-ID agent...";
+    }
+</script>
+</body>
+</html>

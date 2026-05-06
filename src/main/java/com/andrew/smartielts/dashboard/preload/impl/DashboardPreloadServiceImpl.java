@@ -55,7 +55,7 @@ public class DashboardPreloadServiceImpl implements DashboardPreloadService {
                                                 DashboardAskObjectRef objectRef,
                                                 Map<String, Object> context) {
 
-        String cacheKey = buildCacheKey(role, operatorUserId, targetUserId, pageName, objectRef);
+        String cacheKey = buildCacheKey(role, operatorUserId, targetUserId, pageName, objectRef, context);
         DashboardAskPreloadedPayload cached = dashboardPreloadCacheService.get(cacheKey);
         if (cached != null) {
             DashboardAskPreloadedPayload copied = copyPayload(cached);
@@ -94,8 +94,9 @@ public class DashboardPreloadServiceImpl implements DashboardPreloadService {
                                                   Long operatorUserId,
                                                   Long targetUserId,
                                                   String pageName,
-                                                  DashboardAskObjectRef objectRef) {
-        String cacheKey = buildCacheKey(role, operatorUserId, targetUserId, pageName, objectRef);
+                                                  DashboardAskObjectRef objectRef,
+                                                  Map<String, Object> context) {
+        String cacheKey = buildCacheKey(role, operatorUserId, targetUserId, pageName, objectRef, context);
         DashboardAskPreloadedPayload payload = dashboardPreloadCacheService.get(cacheKey);
         if (payload == null) {
             return null;
@@ -111,7 +112,7 @@ public class DashboardPreloadServiceImpl implements DashboardPreloadService {
                       Long targetUserId,
                       String pageName,
                       DashboardAskObjectRef objectRef) {
-        dashboardPreloadCacheService.evict(buildCacheKey(role, operatorUserId, targetUserId, pageName, objectRef));
+        dashboardPreloadCacheService.evict(buildCacheKey(role, operatorUserId, targetUserId, pageName, objectRef, null));
     }
 
     private DashboardAskPreloadedPayload buildPayload(String role,
@@ -311,11 +312,13 @@ public class DashboardPreloadServiceImpl implements DashboardPreloadService {
                                  Long operatorUserId,
                                  Long targetUserId,
                                  String pageName,
-                                 DashboardAskObjectRef objectRef) {
+                                 DashboardAskObjectRef objectRef,
+                                 Map<String, Object> context) {
         String module = objectRef == null ? "none" : safe(objectRef.getModule());
         String objectType = objectRef == null ? "none" : safe(objectRef.getObjectType());
         String recordId = objectRef == null || objectRef.getRecordId() == null ? "none" : String.valueOf(objectRef.getRecordId());
         String questionId = objectRef == null || objectRef.getQuestionId() == null ? "none" : String.valueOf(objectRef.getQuestionId());
+        String timeRange = context == null ? "none" : safe(String.valueOf(context.getOrDefault("timeRange", "none")));
         return String.join(":",
                 safe(role),
                 String.valueOf(operatorUserId),
@@ -324,7 +327,8 @@ public class DashboardPreloadServiceImpl implements DashboardPreloadService {
                 module,
                 objectType,
                 recordId,
-                questionId
+                questionId,
+                timeRange
         );
     }
 

@@ -47,6 +47,7 @@ public class SecurityConfig {
                                 mvc.pattern("/swagger-resources/**"),
                                 mvc.pattern("/speaking/webhook/**")
                         ).permitAll()
+                        .requestMatchers("/did-agent-smoke.html").permitAll()
                         .requestMatchers(mvc.pattern("/admin/**")).hasRole("ADMIN")
                         .requestMatchers(mvc.pattern("/user/**")).hasRole("USER")
                         .requestMatchers("/error").permitAll()

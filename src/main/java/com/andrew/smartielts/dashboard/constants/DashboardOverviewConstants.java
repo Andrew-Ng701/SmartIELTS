@@ -20,7 +20,7 @@ public final class DashboardOverviewConstants {
 
     public static final String DEFAULT_TIME_RANGE = "last30days";
 
-    // 內部沿用你現有 ask / preload / intent 習慣
+    // Shared keys used by ask, preload, and intent flows.
     public static final String CONTEXT_KEY_TIME_RANGE = "timeRange";
     public static final String CONTEXT_KEY_MODULE = "module";
 

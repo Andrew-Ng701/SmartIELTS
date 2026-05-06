@@ -1,27 +1,37 @@
 package com.andrew.smartielts.speaking.service.user.impl;
 
+import com.andrew.smartielts.speaking.ai.SpeakingScoreAiProperties;
+import com.andrew.smartielts.speaking.ai.dto.SpeakingEvaluationResult;
 import com.andrew.smartielts.speaking.ai.dto.SpeakingFinalEvaluationResult;
 import com.andrew.smartielts.speaking.ai.service.SpeakingFinalEvaluationService;
 import com.andrew.smartielts.speaking.ai.service.SpeakingScoreAiService;
 import com.andrew.smartielts.speaking.aliyun.AliyunBailianAsrClient;
 import com.andrew.smartielts.speaking.did.service.DidSpeakingService;
+import com.andrew.smartielts.speaking.domain.model.ExamStep;
 import com.andrew.smartielts.speaking.domain.pojo.SpeakingQuestion;
 import com.andrew.smartielts.speaking.domain.pojo.SpeakingRecord;
 import com.andrew.smartielts.speaking.domain.pojo.SpeakingSession;
+import com.andrew.smartielts.speaking.domain.vo.SubmitAnswerVO;
+import com.andrew.smartielts.speaking.domain.vo.UploadSpeakingAudioVO;
 import com.andrew.smartielts.speaking.mapper.SpeakingMapper;
 import com.andrew.smartielts.speaking.mapper.SpeakingRecordMapper;
 import com.andrew.smartielts.speaking.mapper.SpeakingSessionMapper;
+import com.andrew.smartielts.speaking.mapper.SpeakingTalkMapper;
 import com.andrew.smartielts.speaking.oss.service.SpeakingAudioStorageService;
+import com.andrew.smartielts.utils.SecurityUtils;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.*;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.mock.web.MockMultipartFile;
 
 import java.lang.reflect.Method;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Executor;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -38,6 +48,9 @@ class UserSpeakingServiceImplTest {
 
     @Mock
     private SpeakingSessionMapper speakingSessionMapper;
+
+    @Mock
+    private SpeakingTalkMapper speakingTalkMapper;
 
     @Mock
     private DidSpeakingService didSpeakingService;
@@ -60,6 +73,12 @@ class UserSpeakingServiceImplTest {
     @Mock
     private SpeakingFinalEvaluationService speakingFinalEvaluationService;
 
+    @Mock
+    private SpeakingScoreAiProperties speakingScoreAiProperties;
+
+    @Mock
+    private Executor speakingScoringExecutor;
+
     @InjectMocks
     private UserSpeakingServiceImpl userSpeakingService;
 
@@ -68,9 +87,12 @@ class UserSpeakingServiceImplTest {
     private SpeakingRecord r2;
     private SpeakingQuestion q1;
     private SpeakingQuestion q2;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @BeforeEach
     void setUp() {
+        lenient().when(speakingScoreAiProperties.getPerQuestionModelOrDefault()).thenReturn("qwen3-omni-flash");
+
         session = new SpeakingSession();
         session.setId(1L);
         session.setSessionId("sess-000001");
@@ -122,8 +144,8 @@ class UserSpeakingServiceImplTest {
     void finalizeSessionEvaluation_success_shouldWriteSessionFinalScoresAndCompletedStatus() {
         when(speakingSessionMapper.findBySessionId("sess-000001")).thenReturn(session);
         when(speakingRecordMapper.findBySessionId("sess-000001")).thenReturn(List.of(r1, r2));
-        when(speakingMapper.findById(101L)).thenReturn(q1);
-        when(speakingMapper.findById(102L)).thenReturn(q2);
+        when(speakingMapper.findAnyById(101L)).thenReturn(q1);
+        when(speakingMapper.findAnyById(102L)).thenReturn(q2);
 
         SpeakingFinalEvaluationResult aiResult = new SpeakingFinalEvaluationResult();
         aiResult.setFluencyAndCoherence(new BigDecimal("6.5"));
@@ -165,8 +187,8 @@ class UserSpeakingServiceImplTest {
     void finalizeSessionEvaluation_whenFinalAiFails_shouldFallbackToAggregatedResult() {
         when(speakingSessionMapper.findBySessionId("sess-000001")).thenReturn(session);
         when(speakingRecordMapper.findBySessionId("sess-000001")).thenReturn(List.of(r1, r2));
-        when(speakingMapper.findById(101L)).thenReturn(q1);
-        when(speakingMapper.findById(102L)).thenReturn(q2);
+        when(speakingMapper.findAnyById(101L)).thenReturn(q1);
+        when(speakingMapper.findAnyById(102L)).thenReturn(q2);
 
         when(speakingFinalEvaluationService.evaluateFinal(
                 anyString(), anyMap(), anyList(), any(), any(), any(), any(), any()
@@ -203,6 +225,139 @@ class UserSpeakingServiceImplTest {
     }
 
     @Test
+    void submitAnswer_shouldPersistProcessingRecordAndQueueAsyncScoring() throws Exception {
+        String sessionId = "sess-000001";
+        Long userId = 100L;
+        Long questionId = 101L;
+
+        SpeakingSession activeSession = new SpeakingSession();
+        activeSession.setId(1L);
+        activeSession.setSessionId(sessionId);
+        activeSession.setUserId(userId);
+        activeSession.setTotalQuestions(2);
+        activeSession.setCurrentIndex(0);
+        activeSession.setExamStatus("STARTED");
+        activeSession.setExamPlanJson(objectMapper.writeValueAsString(List.of(
+                buildStep("PART1", questionId),
+                buildStep("PART3", 102L)
+        )));
+
+        SpeakingQuestion question = new SpeakingQuestion();
+        question.setId(questionId);
+        question.setPart("PART1");
+        question.setQuestionText("Do you enjoy reading?");
+
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "answer.mp3",
+                "audio/mpeg",
+                "fake".getBytes()
+        );
+
+        UploadSpeakingAudioVO uploadVo = new UploadSpeakingAudioVO();
+        uploadVo.setAudioUrl("https://oss.example.com/answer.mp3");
+
+        when(speakingSessionMapper.findBySessionId(sessionId)).thenReturn(activeSession);
+        when(speakingMapper.findById(questionId)).thenReturn(question);
+        when(speakingRecordMapper.findBySessionIdAndQuestionId(sessionId, questionId)).thenReturn(null);
+        when(speakingAudioStorageService.uploadAudio(file, userId, sessionId, questionId)).thenReturn(uploadVo);
+        doAnswer(invocation -> {
+            SpeakingRecord inserted = invocation.getArgument(0);
+            inserted.setId(501L);
+            return null;
+        }).when(speakingRecordMapper).insertSpeakingRecord(any(SpeakingRecord.class));
+
+        try (MockedStatic<SecurityUtils> security = mockStatic(SecurityUtils.class)) {
+            security.when(SecurityUtils::getCurrentUserId).thenReturn(userId);
+
+            SubmitAnswerVO result = userSpeakingService.submitAnswer(sessionId, questionId, file);
+
+            assertEquals(501L, result.getRecordId());
+            assertEquals("PROCESSING", result.getAnswerStatus());
+            assertEquals("PROCESSING", result.getAiStatus());
+            assertEquals("https://oss.example.com/answer.mp3", result.getAudioUrl());
+            verify(speakingScoringExecutor).execute(any(Runnable.class));
+
+            ArgumentCaptor<SpeakingRecord> recordCaptor = ArgumentCaptor.forClass(SpeakingRecord.class);
+            verify(speakingRecordMapper).insertSpeakingRecord(recordCaptor.capture());
+            SpeakingRecord inserted = recordCaptor.getValue();
+            assertEquals("PROCESSING", inserted.getAnswerStatus());
+            assertEquals("PROCESSING", inserted.getAiStatus());
+            assertNull(inserted.getOverallScore());
+
+            ArgumentCaptor<SpeakingSession> sessionCaptor = ArgumentCaptor.forClass(SpeakingSession.class);
+            verify(speakingSessionMapper).updateSpeakingSession(sessionCaptor.capture());
+            assertEquals(1, sessionCaptor.getValue().getCurrentIndex());
+            assertEquals("IN_PROGRESS", sessionCaptor.getValue().getExamStatus());
+        }
+    }
+
+    @Test
+    void processSubmittedAnswer_success_shouldScoreRecordAndTriggerFinalWhenComplete() {
+        SpeakingRecord record = new SpeakingRecord();
+        record.setId(501L);
+        record.setSessionId("sess-000001");
+        record.setQuestionId(101L);
+        record.setAudioUrl("https://oss.example.com/answer.mp3");
+        record.setAnswerStatus("PROCESSING");
+
+        SpeakingQuestion question = new SpeakingQuestion();
+        question.setId(101L);
+        question.setPart("PART1");
+        question.setQuestionText("Do you enjoy reading?");
+
+        SpeakingEvaluationResult evaluation = new SpeakingEvaluationResult();
+        evaluation.setFluencyAndCoherence(new BigDecimal("6.5"));
+        evaluation.setLexicalResource(new BigDecimal("6.0"));
+        evaluation.setGrammaticalRangeAndAccuracy(new BigDecimal("6.0"));
+        evaluation.setPronunciation(new BigDecimal("6.5"));
+        evaluation.setOverallScore(new BigDecimal("6.5"));
+        evaluation.setFeedback("Clear and relevant.");
+
+        session.setTotalQuestions(1);
+        session.setCurrentIndex(1);
+
+        when(speakingRecordMapper.findAnyById(501L)).thenReturn(record);
+        when(speakingMapper.findAnyById(101L)).thenReturn(question);
+        when(aliyunBailianAsrClient.transcribe("https://oss.example.com/answer.mp3"))
+                .thenReturn("Yes, I enjoy reading.");
+        when(speakingScoreAiService.evaluate(
+                eq("PART1"),
+                eq("Do you enjoy reading?"),
+                isNull(),
+                eq("Yes, I enjoy reading."),
+                eq("https://oss.example.com/answer.mp3")
+        )).thenReturn(evaluation);
+        when(speakingSessionMapper.findBySessionId("sess-000001")).thenReturn(session);
+        when(speakingRecordMapper.findBySessionId("sess-000001")).thenReturn(List.of(record));
+
+        SpeakingFinalEvaluationResult finalResult = new SpeakingFinalEvaluationResult();
+        finalResult.setFluencyAndCoherence(new BigDecimal("6.5"));
+        finalResult.setLexicalResource(new BigDecimal("6.0"));
+        finalResult.setGrammaticalRangeAndAccuracy(new BigDecimal("6.0"));
+        finalResult.setPronunciation(new BigDecimal("6.5"));
+        finalResult.setOverallScore(new BigDecimal("6.5"));
+        finalResult.setFeedback("Final feedback.");
+        when(speakingFinalEvaluationService.evaluateFinal(
+                anyString(), anyMap(), anyList(), any(), any(), any(), any(), any()
+        )).thenReturn(finalResult);
+
+        userSpeakingService.processSubmittedAnswer(501L, "https://oss.example.com/answer.mp3");
+
+        ArgumentCaptor<SpeakingRecord> recordCaptor = ArgumentCaptor.forClass(SpeakingRecord.class);
+        verify(speakingRecordMapper).updateSpeakingRecord(recordCaptor.capture());
+        SpeakingRecord scored = recordCaptor.getValue();
+        assertEquals("SCORED", scored.getAnswerStatus());
+        assertEquals("SCORED", scored.getAiStatus());
+        assertEquals(new BigDecimal("6.5"), scored.getOverallScore());
+        assertEquals("Yes, I enjoy reading.", scored.getTranscript());
+
+        ArgumentCaptor<SpeakingSession> sessionCaptor = ArgumentCaptor.forClass(SpeakingSession.class);
+        verify(speakingSessionMapper, atLeastOnce()).updateSpeakingSession(sessionCaptor.capture());
+        assertEquals("COMPLETED", sessionCaptor.getAllValues().get(sessionCaptor.getAllValues().size() - 1).getExamStatus());
+    }
+
+    @Test
     void averageScore_shouldRoundHalfUpToOneDecimal() throws Exception {
         Method method = UserSpeakingServiceImpl.class.getDeclaredMethod("averageScore", List.class);
         method.setAccessible(true);
@@ -213,5 +368,14 @@ class UserSpeakingServiceImplTest {
         );
 
         assertEquals(new BigDecimal("6.3"), result);
+    }
+
+    private ExamStep buildStep(String stepType, Long questionId) {
+        ExamStep step = new ExamStep();
+        step.setStepType(stepType);
+        step.setPart(stepType);
+        step.setQuestionId(questionId);
+        step.setTopicKey("topic-1");
+        return step;
     }
 }

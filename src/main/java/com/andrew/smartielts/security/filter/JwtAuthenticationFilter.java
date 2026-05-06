@@ -51,6 +51,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 || uri.equals("/api/auth/login")
                 || uri.equals("/api/auth/register")
                 || uri.startsWith("/api/speaking/webhook")
+                || uri.equals("/did-agent-smoke.html")
                 || uri.equals("/error");
     }
 

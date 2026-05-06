@@ -11,6 +11,9 @@ public class SpeakingSessionSummaryVO {
     private String examStatus;
     private Integer totalQuestions;
     private Integer answeredCount;
+    private Integer processingCount;
+    private Integer scoredCount;
+    private Integer failedCount;
     private BigDecimal fluencyAndCoherence;
     private BigDecimal lexicalResource;
     private BigDecimal grammaticalRangeAndAccuracy;

@@ -10,6 +10,7 @@ import com.andrew.smartielts.speaking.domain.vo.NextQuestionVO;
 import com.andrew.smartielts.speaking.domain.vo.SpeakingRecordDetailVO;
 import com.andrew.smartielts.speaking.domain.vo.SpeakingRecordVO;
 import com.andrew.smartielts.speaking.domain.vo.SpeakingSessionSummaryVO;
+import com.andrew.smartielts.speaking.domain.vo.SpeakingTalkStatusVO;
 import com.andrew.smartielts.speaking.domain.vo.StartExamVO;
 import com.andrew.smartielts.speaking.domain.vo.SubmitAnswerVO;
 import org.springframework.web.multipart.MultipartFile;
@@ -39,4 +40,6 @@ public interface UserSpeakingService {
     void restoreRecord(Long recordId, Long userId);
 
     SpeakingSessionSummaryVO getSessionSummary(String sessionId, Long userId);
+
+    SpeakingTalkStatusVO getTalkStatus(String talkId, Long userId);
 }

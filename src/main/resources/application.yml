@@ -98,6 +98,7 @@ aliyun:
       region: cn-beijing
 
 did:
+  base-url: ${DID_BASE_URL:https://api.d-id.com}
   api-key: ${DID_API_KEY:}
   webhook-url: ${DID_WEBHOOK_URL:http://localhost:8080/api/speaking/webhook/end}
   presenter-id: ${DID_PRESENTER_ID:v2_agt_017IbrpB}
@@ -106,4 +107,3 @@ did:
 app:
   security:
     require-https-webhook: false
-

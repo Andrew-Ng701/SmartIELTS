@@ -13,6 +13,7 @@ import com.andrew.smartielts.listening.mapper.ListeningAudioMapper;
 import com.andrew.smartielts.listening.mapper.ListeningPartGroupMapper;
 import com.andrew.smartielts.listening.mapper.ListeningTestMapper;
 import com.andrew.smartielts.listening.service.admin.ListeningAudioService;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -23,6 +24,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 
+@Slf4j
 @Service
 public class ListeningAudioServiceImpl implements ListeningAudioService {
 
@@ -80,6 +82,7 @@ public class ListeningAudioServiceImpl implements ListeningAudioService {
         validateUploadFile(file);
 
         UploadResult uploaded = uploadAudio(file);
+        String oldObjectKey = existing.getAudioObjectKey();
 
         existing.setTestId(testId);
         existing.setPartGroupId(null);
@@ -91,6 +94,7 @@ public class ListeningAudioServiceImpl implements ListeningAudioService {
         existing.setUpdatedTime(LocalDateTime.now());
 
         listeningAudioMapper.updateListeningAudio(existing);
+        deleteListeningAudioObjectQuietly(oldObjectKey);
         return existing;
     }
 
@@ -131,6 +135,7 @@ public class ListeningAudioServiceImpl implements ListeningAudioService {
         validateUploadFile(file);
 
         UploadResult uploaded = uploadAudio(file);
+        String oldObjectKey = existing.getAudioObjectKey();
 
         existing.setTestId(testId);
         existing.setPartGroupId(partGroupId);
@@ -142,6 +147,7 @@ public class ListeningAudioServiceImpl implements ListeningAudioService {
         existing.setUpdatedTime(LocalDateTime.now());
 
         listeningAudioMapper.updateListeningAudio(existing);
+        deleteListeningAudioObjectQuietly(oldObjectKey);
         return existing;
     }
 
@@ -170,19 +176,27 @@ public class ListeningAudioServiceImpl implements ListeningAudioService {
     @Override
     @Transactional
     public void deleteById(Long id) {
+        ListeningAudio existing = getById(id);
         listeningAudioMapper.deleteById(id);
+        if (existing != null) {
+            deleteListeningAudioObjectQuietly(existing.getAudioObjectKey());
+        }
     }
 
     @Override
     @Transactional
     public void deleteByTestId(Long testId) {
+        List<ListeningAudio> existing = listByTestId(testId);
         listeningAudioMapper.deleteByTestId(testId);
+        deleteListeningAudioObjectsQuietly(existing);
     }
 
     @Override
     @Transactional
     public void deleteByPartGroupId(Long partGroupId) {
+        List<ListeningAudio> existing = listByPartGroupId(partGroupId);
         listeningAudioMapper.deleteByPartGroupId(partGroupId);
+        deleteListeningAudioObjectsQuietly(existing);
     }
 
     private UploadResult uploadAudio(MultipartFile file) {
@@ -195,6 +209,29 @@ public class ListeningAudioServiceImpl implements ListeningAudioService {
 
     private String resolveTranscript(String audioUrl) {
         return listeningTranscriptService.generateTranscript(audioUrl);
+    }
+
+    private void deleteListeningAudioObjectsQuietly(List<ListeningAudio> audios) {
+        if (audios == null || audios.isEmpty()) {
+            return;
+        }
+        for (ListeningAudio audio : audios) {
+            if (audio != null) {
+                deleteListeningAudioObjectQuietly(audio.getAudioObjectKey());
+            }
+        }
+    }
+
+    private void deleteListeningAudioObjectQuietly(String objectKey) {
+        String trimmedObjectKey = trimToNull(objectKey);
+        if (trimmedObjectKey == null) {
+            return;
+        }
+        try {
+            ossStorageService.delete(BucketType.LISTENING_AUDIO, trimmedObjectKey);
+        } catch (Exception e) {
+            log.warn("Failed to delete listening audio object, objectKey={}", trimmedObjectKey, e);
+        }
     }
 
     private ListeningTest requireActiveTest(Long testId) {

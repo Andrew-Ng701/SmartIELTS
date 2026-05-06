@@ -7,9 +7,15 @@ import java.math.BigDecimal;
 @Data
 public class SubmitAnswerVO {
 
+    private Long recordId;
+
     private String sessionId;
 
     private Long questionId;
+
+    private String audioUrl;
+
+    private String answerStatus;
 
     private String status;
 

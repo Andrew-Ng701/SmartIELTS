@@ -220,6 +220,7 @@ public class UserDashboardServiceImpl implements UserDashboardService {
                 userId,
                 query,
                 "user_executive_summary",
+                timeRange,
                 payload
         );
 
@@ -265,6 +266,7 @@ public class UserDashboardServiceImpl implements UserDashboardService {
             Long targetUserId,
             String query,
             String pageName,
+            String timeRange,
             DashboardAskPreloadedPayload payload) {
 
         Map<String, Object> data = new LinkedHashMap<>();
@@ -287,7 +289,7 @@ public class UserDashboardServiceImpl implements UserDashboardService {
         filters.put("pageName", pageName);
         filters.put("summaryType", "executive_summary");
         filters.put("tone", "warm_teacher");
-        filters.put("timeRange", DashboardOverviewConstants.DEFAULT_TIME_RANGE);
+        filters.put("timeRange", normalizeTimeRange(timeRange));
 
         DashboardAnswerComposeResult result = dashboardAnswerComposeService.compose(
                 DashboardAnswerComposeRequest.builder()
@@ -369,9 +371,9 @@ public class UserDashboardServiceImpl implements UserDashboardService {
 
     private Map<String, Object> buildUserScoreTrendChart(DashboardAskPreloadedPayload payload) {
         Map<String, Object> map = new LinkedHashMap<>();
-        map.put("chartType", "line");
-        map.put("xKey", "createdTime");
-        map.put("yKey", "score");
+        map.put("chart_type", "line");
+        map.put("x_key", "createdTime");
+        map.put("y_key", "score");
         map.put("rows", payload.getRecentRecords() == null ? List.of() : payload.getRecentRecords());
         return map;
     }
@@ -563,56 +565,52 @@ public class UserDashboardServiceImpl implements UserDashboardService {
 
     private String buildUserExecutiveSummaryText(DashboardAskPreloadedPayload payload, String timeRange) {
         Map<String, Object> progress = toMap(payload.getProgressSummary());
-        List<Map<String, Object>> moduleStats = toListOfMap(payload.getModuleStats());
 
         String overallAvg = firstNonBlank(
+                getString(progress, "overallAverageScore"),
                 getString(progress, "overallAverage"),
                 getString(progress, "averageScore"),
                 getString(progress, "avgScore"),
                 getString(progress, "overall_score")
         );
 
-        WeakModule weak = findWeakestModule(moduleStats);
+        WeakModule weak = findWeakestScoreModule(progress);
 
         List<String> parts = new ArrayList<>();
+        String rangeLabel = toZhTimeRange(timeRange);
 
         if (hasText(overallAvg)) {
-            parts.add("最近 30 天整體平均約為 " + overallAvg + "。");
+            parts.add(rangeLabel + " 的整體平均分是 " + overallAvg + "。");
         } else {
-            parts.add("最近 30 天已有學習紀錄，整體表現可持續追蹤。");
+            parts.add(rangeLabel + " 目前可用分數資料不足，建議先完成一次四科練習建立基準。");
         }
 
         if (weak != null && hasText(weak.moduleName)) {
-            parts.add("目前相對較弱的模組是 " + weak.moduleName + "。");
-            parts.add("建議下一步優先集中練習 " + weak.moduleName + "，先把弱項穩定下來。");
+            parts.add("目前較需要關注的是 " + weak.moduleName + "，平均分約 " + weak.score + "。");
+            parts.add("建議下一輪練習先安排 " + weak.moduleName + "，再回到 dashboard 比較趨勢。");
         } else {
-            parts.add("目前各模組差距尚不明顯。");
-            parts.add("建議下一步優先增加近期作答量，讓系統能更準確辨識弱項。");
+            parts.add("目前各科分數還不足以判斷弱項。");
+            parts.add("建議前端顯示最近紀錄與四科雷達圖，引導使用者補齊缺少的練習資料。");
         }
 
         return String.join("", parts);
     }
 
-    private WeakModule findWeakestModule(List<Map<String, Object>> rows) {
+    private WeakModule findWeakestScoreModule(Map<String, Object> progress) {
+        List<WeakModule> modules = List.of(
+                new WeakModule("listening", toDouble(progress.get("listeningAverageScore"))),
+                new WeakModule("reading", toDouble(progress.get("readingAverageScore"))),
+                new WeakModule("writing", toDouble(progress.get("writingAverageScore"))),
+                new WeakModule("speaking", toDouble(progress.get("speakingAverageScore")))
+        );
+
         WeakModule result = null;
-        for (Map<String, Object> row : rows) {
-            String moduleName = firstNonBlank(
-                    getString(row, "module"),
-                    getString(row, "moduleName"),
-                    getString(row, "name")
-            );
-            Double score = firstNumber(
-                    row.get("avgScore"),
-                    row.get("averageScore"),
-                    row.get("score"),
-                    row.get("overallAverage"),
-                    row.get("overall_score")
-            );
-            if (!hasText(moduleName) || score == null) {
+        for (WeakModule module : modules) {
+            if (module.score == null || module.score <= 0) {
                 continue;
             }
-            if (result == null || score < result.score) {
-                result = new WeakModule(moduleName, score);
+            if (result == null || module.score < result.score) {
+                result = module;
             }
         }
         return result;
@@ -693,6 +691,19 @@ public class UserDashboardServiceImpl implements UserDashboardService {
 
     private boolean hasText(String value) {
         return value != null && !value.isBlank();
+    }
+
+    private String normalizeTimeRange(String timeRange) {
+        return hasText(timeRange) ? timeRange.trim() : DashboardOverviewConstants.DEFAULT_TIME_RANGE;
+    }
+
+    private String toZhTimeRange(String timeRange) {
+        return switch (normalizeTimeRange(timeRange).toLowerCase(java.util.Locale.ROOT)) {
+            case "last7days" -> "近 7 天";
+            case "last90days" -> "近 90 天";
+            case "all" -> "全部時間";
+            default -> "近 30 天";
+        };
     }
 
     private List<String> splitSummarySentences(String text) {

@@ -8,6 +8,7 @@ import com.andrew.smartielts.speaking.ai.service.SpeakingFinalEvaluationService;
 import com.andrew.smartielts.speaking.ai.service.SpeakingScoreAiService;
 import com.andrew.smartielts.speaking.aliyun.AliyunBailianAsrClient;
 import com.andrew.smartielts.speaking.did.service.DidSpeakingService;
+import com.andrew.smartielts.speaking.domain.pojo.SpeakingTalk;
 import com.andrew.smartielts.speaking.domain.dto.NextQuestionRequestDTO;
 import com.andrew.smartielts.speaking.domain.dto.StartExamRequestDTO;
 import com.andrew.smartielts.speaking.domain.model.ExamStep;
@@ -20,11 +21,13 @@ import com.andrew.smartielts.speaking.domain.vo.NextQuestionVO;
 import com.andrew.smartielts.speaking.domain.vo.SpeakingRecordDetailVO;
 import com.andrew.smartielts.speaking.domain.vo.SpeakingRecordVO;
 import com.andrew.smartielts.speaking.domain.vo.SpeakingSessionSummaryVO;
+import com.andrew.smartielts.speaking.domain.vo.SpeakingTalkStatusVO;
 import com.andrew.smartielts.speaking.domain.vo.StartExamVO;
 import com.andrew.smartielts.speaking.domain.vo.SubmitAnswerVO;
 import com.andrew.smartielts.speaking.mapper.SpeakingMapper;
 import com.andrew.smartielts.speaking.mapper.SpeakingRecordMapper;
 import com.andrew.smartielts.speaking.mapper.SpeakingSessionMapper;
+import com.andrew.smartielts.speaking.mapper.SpeakingTalkMapper;
 import com.andrew.smartielts.speaking.oss.service.SpeakingAudioStorageService;
 import com.andrew.smartielts.speaking.service.user.UserSpeakingService;
 import com.andrew.smartielts.utils.SecurityUtils;
@@ -32,8 +35,11 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.math.BigDecimal;
@@ -44,28 +50,20 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.Executor;
+
+import static com.andrew.smartielts.speaking.constants.SpeakingStatusConstants.*;
 
 @Service
 @Slf4j
 public class UserSpeakingServiceImpl implements UserSpeakingService {
-
-    private static final String EXAM_TYPE_FULL = "FULL";
-
-    private static final String SESSION_PENDING = "PENDING";
-    private static final String SESSION_STARTED = "STARTED";
-    private static final String SESSION_IN_PROGRESS = "INPROGRESS";
-    private static final String SESSION_WAITING_FINAL_EVALUATION = "WAITINGFINALEVALUATION";
-    private static final String SESSION_COMPLETED = "COMPLETED";
-
-    private static final String RECORD_RECEIVED = "RECEIVED";
-    private static final String RECORD_SCORED = "SCORED";
-    private static final String RECORD_FAILED = "FAILED";
 
     private static final String STEP_PART2 = "PART2";
 
     private final SpeakingMapper speakingMapper;
     private final SpeakingRecordMapper speakingRecordMapper;
     private final SpeakingSessionMapper speakingSessionMapper;
+    private final SpeakingTalkMapper speakingTalkMapper;
     private final DidSpeakingService didSpeakingService;
     private final SpeakingExamPlanner speakingExamPlanner;
     private final SpeakingScriptBuilder speakingScriptBuilder;
@@ -74,11 +72,13 @@ public class UserSpeakingServiceImpl implements UserSpeakingService {
     private final SpeakingScoreAiService speakingScoreAiService;
     private final SpeakingFinalEvaluationService speakingFinalEvaluationService;
     private final SpeakingScoreAiProperties speakingScoreAiProperties;
+    private final Executor speakingScoringExecutor;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public UserSpeakingServiceImpl(SpeakingMapper speakingMapper,
                                    SpeakingRecordMapper speakingRecordMapper,
                                    SpeakingSessionMapper speakingSessionMapper,
+                                   SpeakingTalkMapper speakingTalkMapper,
                                    DidSpeakingService didSpeakingService,
                                    SpeakingExamPlanner speakingExamPlanner,
                                    SpeakingScriptBuilder speakingScriptBuilder,
@@ -86,10 +86,12 @@ public class UserSpeakingServiceImpl implements UserSpeakingService {
                                    AliyunBailianAsrClient aliyunBailianAsrClient,
                                    SpeakingScoreAiService speakingScoreAiService,
                                    SpeakingFinalEvaluationService speakingFinalEvaluationService,
-                                   SpeakingScoreAiProperties speakingScoreAiProperties) {
+                                   SpeakingScoreAiProperties speakingScoreAiProperties,
+                                   @Qualifier("speakingScoringExecutor") Executor speakingScoringExecutor) {
         this.speakingMapper = speakingMapper;
         this.speakingRecordMapper = speakingRecordMapper;
         this.speakingSessionMapper = speakingSessionMapper;
+        this.speakingTalkMapper = speakingTalkMapper;
         this.didSpeakingService = didSpeakingService;
         this.speakingExamPlanner = speakingExamPlanner;
         this.speakingScriptBuilder = speakingScriptBuilder;
@@ -98,6 +100,7 @@ public class UserSpeakingServiceImpl implements UserSpeakingService {
         this.speakingScoreAiService = speakingScoreAiService;
         this.speakingFinalEvaluationService = speakingFinalEvaluationService;
         this.speakingScoreAiProperties = speakingScoreAiProperties;
+        this.speakingScoringExecutor = speakingScoringExecutor;
     }
 
     @Override
@@ -207,6 +210,7 @@ public class UserSpeakingServiceImpl implements UserSpeakingService {
         String spokenScript = speakingScriptBuilder.buildSpokenScript(current, previous, question);
         String displayScript = speakingScriptBuilder.buildDisplayScript(current, question);
         String talkId = didSpeakingService.createTalk(spokenScript);
+        saveTalk(talkId, currentUserId, session.getSessionId(), question.getId());
 
         NextQuestionVO vo = new NextQuestionVO();
         vo.setSessionId(session.getSessionId());
@@ -227,15 +231,29 @@ public class UserSpeakingServiceImpl implements UserSpeakingService {
         return vo;
     }
 
+    private void saveTalk(String talkId, Long userId, String sessionId, Long questionId) {
+        if (talkId == null || talkId.isBlank()) {
+            return;
+        }
+        SpeakingTalk existing = speakingTalkMapper.findByTalkId(talkId);
+        if (existing != null) {
+            return;
+        }
+        LocalDateTime now = LocalDateTime.now();
+        SpeakingTalk talk = new SpeakingTalk();
+        talk.setTalkId(talkId);
+        talk.setUserId(userId);
+        talk.setSessionId(sessionId);
+        talk.setQuestionId(questionId);
+        talk.setTalkStatus(TALK_CREATED);
+        talk.setCreatedTime(now);
+        talk.setUpdatedTime(now);
+        speakingTalkMapper.insertSpeakingTalk(talk);
+    }
+
     @Override
     @Transactional
     public SubmitAnswerVO submitAnswer(String sessionId, Long questionId, MultipartFile file) {
-        log.info("SubmitAnswer start, sessionId={}, questionId={}, fileName={}, size={}",
-                sessionId,
-                questionId,
-                file != null ? file.getOriginalFilename() : null,
-                file != null ? file.getSize() : -1);
-
         if (sessionId == null || sessionId.isBlank()) {
             throw new RuntimeException("sessionId is required");
         }
@@ -270,100 +288,43 @@ public class UserSpeakingServiceImpl implements UserSpeakingService {
         SpeakingRecord record = speakingRecordMapper.findBySessionIdAndQuestionId(sessionId, questionId);
         boolean firstSubmission = record == null;
         LocalDateTime now = LocalDateTime.now();
+        String audioUrl = speakingAudioStorageService
+                .uploadAudio(file, currentUserId, sessionId, questionId)
+                .getAudioUrl();
 
         if (record == null) {
             record = new SpeakingRecord();
             record.setUserId(session.getUserId());
             record.setSessionId(sessionId);
             record.setQuestionId(questionId);
-            record.setAnswerStatus(RECORD_RECEIVED);
             record.setIsDeleted(0);
             record.setCreatedTime(now);
-            record.setUpdatedTime(now);
         } else {
-            record.setUpdatedTime(now);
-            record.setAnswerStatus(RECORD_RECEIVED);
             record.setDeletedTime(null);
             record.setIsDeleted(0);
         }
 
-        try {
-            String audioUrl = speakingAudioStorageService
-                    .uploadAudio(file, currentUserId, sessionId, questionId)
-                    .getAudioUrl();
-            record.setAudioUrl(audioUrl);
+        record.setAudioUrl(audioUrl);
+        record.setTranscript(null);
+        record.setFluencyAndCoherence(null);
+        record.setLexicalResource(null);
+        record.setGrammaticalRangeAndAccuracy(null);
+        record.setPronunciation(null);
+        record.setRelevanceComment(null);
+        record.setQualityComment(null);
+        record.setOverallScore(null);
+        record.setFeedback(null);
+        record.setAnswerStatus(RECORD_PROCESSING);
+        record.setAiStatus(RECORD_PROCESSING);
+        record.setAiProvider("aliyun");
+        record.setAiModel(speakingScoreAiProperties.getPerQuestionModelOrDefault());
+        record.setAiErrorMessage(null);
+        record.setUpdatedTime(now);
 
-            String transcript = aliyunBailianAsrClient.transcribe(audioUrl);
-            record.setTranscript(transcript);
-
-            SpeakingEvaluationResult evaluation = speakingScoreAiService.evaluate(
-                    question.getPart(),
-                    question.getQuestionText(),
-                    question.getCueCard(),
-                    transcript,
-                    audioUrl
-            );
-
-            log.info("SubmitAnswer Omni score, sessionId={}, questionId={}, FC={}, LR={}, GRA={}, Pron={}, Overall={}, feedbackLen={}, rawLen={}",
-                    sessionId,
-                    questionId,
-                    evaluation.getFluencyAndCoherence(),
-                    evaluation.getLexicalResource(),
-                    evaluation.getGrammaticalRangeAndAccuracy(),
-                    evaluation.getPronunciation(),
-                    evaluation.getOverallScore(),
-                    evaluation.getFeedback() != null ? evaluation.getFeedback().length() : 0,
-                    evaluation.getRawContent() != null ? evaluation.getRawContent().length() : 0);
-
-            record.setFluencyAndCoherence(normalizeScore(evaluation.getFluencyAndCoherence()));
-            record.setLexicalResource(normalizeScore(evaluation.getLexicalResource()));
-            record.setGrammaticalRangeAndAccuracy(normalizeScore(evaluation.getGrammaticalRangeAndAccuracy()));
-            record.setPronunciation(normalizeScore(evaluation.getPronunciation()));
-            record.setRelevanceComment(evaluation.getRelevanceComment());
-            record.setQualityComment(evaluation.getQualityComment());
-            record.setOverallScore(normalizeScore(evaluation.getOverallScore()));
-            record.setFeedback(evaluation.getFeedback());
-
-            record.setAiStatus(RECORD_SCORED);
-            record.setAiProvider("aliyun");
-            record.setAiModel(speakingScoreAiProperties.getPerQuestionModelOrDefault());
-            record.setAiErrorMessage(null);
-
-            record.setAnswerStatus(RECORD_SCORED);
-            record.setUpdatedTime(LocalDateTime.now());
-
-            if (record.getId() == null) {
-                speakingRecordMapper.insertSpeakingRecord(record);
-                log.info("SubmitAnswer record persisted, sessionId={}, questionId={}, recordId={}, mode=INSERT",
-                        sessionId, questionId, record.getId());
-            } else {
-                speakingRecordMapper.updateSpeakingRecord(record);
-                log.info("SubmitAnswer record persisted, sessionId={}, questionId={}, recordId={}, mode=UPDATE",
-                        sessionId, questionId, record.getId());
-            }
-
-        } catch (Exception e) {
-            log.error("SubmitAnswer failed, sessionId={}, questionId={}, msg={}",
-                    sessionId, questionId, e.getMessage(), e);
-
-            record.setAnswerStatus(RECORD_FAILED);
-            record.setAiStatus(RECORD_FAILED);
-            record.setAiProvider("aliyun");
-            record.setAiModel(speakingScoreAiProperties.getPerQuestionModelOrDefault());
-            record.setAiErrorMessage(e.getMessage());
-            record.setUpdatedTime(LocalDateTime.now());
-
-            if (record.getId() == null) {
-                speakingRecordMapper.insertSpeakingRecord(record);
-                log.info("SubmitAnswer record persisted on failure, sessionId={}, questionId={}, recordId={}, mode=INSERT",
-                        sessionId, questionId, record.getId());
-            } else {
-                speakingRecordMapper.updateSpeakingRecord(record);
-                log.info("SubmitAnswer record persisted on failure, sessionId={}, questionId={}, recordId={}, mode=UPDATE",
-                        sessionId, questionId, record.getId());
-            }
-
-            throw new RuntimeException("Failed to process speaking audio: " + e.getMessage(), e);
+        if (record.getId() == null) {
+            speakingRecordMapper.insertSpeakingRecord(record);
+        } else {
+            speakingRecordMapper.updateSpeakingRecord(record);
         }
 
         if (firstSubmission && session.getCurrentIndex() < session.getTotalQuestions()) {
@@ -378,33 +339,154 @@ public class UserSpeakingServiceImpl implements UserSpeakingService {
 
         session.setUpdatedTime(now);
         speakingSessionMapper.updateSpeakingSession(session);
-        log.info("SubmitAnswer session updated, sessionId={}, currentIndex={}, examStatus={}",
-                sessionId, session.getCurrentIndex(), session.getExamStatus());
 
-        if (session.getCurrentIndex() >= session.getTotalQuestions()) {
-            log.info("SubmitAnswer trigger finalizeSessionEvaluation, sessionId={}", sessionId);
-            finalizeSessionEvaluation(sessionId);
-        }
+        Long recordId = record.getId();
+        enqueueScoringAfterCommit(recordId, audioUrl);
 
         SubmitAnswerVO vo = new SubmitAnswerVO();
+        vo.setRecordId(recordId);
         vo.setSessionId(sessionId);
         vo.setQuestionId(questionId);
+        vo.setAudioUrl(audioUrl);
+        vo.setAnswerStatus(record.getAnswerStatus());
         vo.setStatus(record.getAnswerStatus());
-        vo.setFluencyAndCoherence(record.getFluencyAndCoherence());
-        vo.setLexicalResource(record.getLexicalResource());
-        vo.setGrammaticalRangeAndAccuracy(record.getGrammaticalRangeAndAccuracy());
-        vo.setPronunciation(record.getPronunciation());
-        vo.setRelevanceComment(record.getRelevanceComment());
-        vo.setQualityComment(record.getQualityComment());
-        vo.setOverallScore(record.getOverallScore());
-        vo.setFeedback(record.getFeedback());
+        vo.setAiStatus(record.getAiStatus());
+        vo.setAiProvider(record.getAiProvider());
+        vo.setAiModel(record.getAiModel());
         vo.setMessage(firstSubmission
-                ? "Audio submitted and scored successfully"
-                : "Audio resubmitted and record updated successfully");
+                ? "Audio submitted and queued for scoring"
+                : "Audio resubmitted and queued for scoring");
 
-        log.info("SubmitAnswer success, sessionId={}, questionId={}, status={}",
-                sessionId, questionId, vo.getStatus());
+        log.info("SubmitAnswer queued, sessionId={}, questionId={}, recordId={}, status={}",
+                sessionId, questionId, recordId, record.getAnswerStatus());
         return vo;
+    }
+
+    private void enqueueScoringAfterCommit(Long recordId, String submittedAudioUrl) {
+        Runnable task = () -> speakingScoringExecutor.execute(
+                () -> processSubmittedAnswer(recordId, submittedAudioUrl)
+        );
+
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    task.run();
+                }
+            });
+        } else {
+            task.run();
+        }
+    }
+
+    void processSubmittedAnswer(Long recordId, String submittedAudioUrl) {
+        if (recordId == null) {
+            return;
+        }
+
+        SpeakingRecord record = speakingRecordMapper.findAnyById(recordId);
+        if (record == null || !Objects.equals(record.getAudioUrl(), submittedAudioUrl)) {
+            return;
+        }
+
+        try {
+            SpeakingQuestion question = findQuestionIncludingDeleted(record.getQuestionId());
+            if (question == null) {
+                throw new RuntimeException("Speaking question not found");
+            }
+
+            String transcript = aliyunBailianAsrClient.transcribe(record.getAudioUrl());
+            if (transcript == null || transcript.isBlank()) {
+                throw new RuntimeException("Transcript is empty");
+            }
+
+            SpeakingEvaluationResult evaluation = speakingScoreAiService.evaluate(
+                    question.getPart(),
+                    question.getQuestionText(),
+                    question.getCueCard(),
+                    transcript,
+                    record.getAudioUrl()
+            );
+
+            SpeakingRecord latest = speakingRecordMapper.findAnyById(recordId);
+            if (latest == null || !Objects.equals(latest.getAudioUrl(), submittedAudioUrl)) {
+                return;
+            }
+
+            latest.setTranscript(transcript);
+            latest.setFluencyAndCoherence(normalizeScore(evaluation.getFluencyAndCoherence()));
+            latest.setLexicalResource(normalizeScore(evaluation.getLexicalResource()));
+            latest.setGrammaticalRangeAndAccuracy(normalizeScore(evaluation.getGrammaticalRangeAndAccuracy()));
+            latest.setPronunciation(normalizeScore(evaluation.getPronunciation()));
+            latest.setRelevanceComment(evaluation.getRelevanceComment());
+            latest.setQualityComment(evaluation.getQualityComment());
+            latest.setOverallScore(normalizeScore(evaluation.getOverallScore()));
+            latest.setFeedback(evaluation.getFeedback());
+            latest.setAiStatus(RECORD_SCORED);
+            latest.setAiProvider("aliyun");
+            latest.setAiModel(speakingScoreAiProperties.getPerQuestionModelOrDefault());
+            latest.setAiErrorMessage(null);
+            latest.setAnswerStatus(RECORD_SCORED);
+            latest.setUpdatedTime(LocalDateTime.now());
+            speakingRecordMapper.updateSpeakingRecord(latest);
+
+            tryCompleteSessionEvaluation(latest.getSessionId());
+        } catch (Exception e) {
+            log.error("Async speaking scoring failed, recordId={}, msg={}", recordId, e.getMessage(), e);
+            markRecordFailed(recordId, submittedAudioUrl, e);
+        }
+    }
+
+    private void markRecordFailed(Long recordId, String submittedAudioUrl, Exception e) {
+        SpeakingRecord latest = speakingRecordMapper.findAnyById(recordId);
+        if (latest == null || !Objects.equals(latest.getAudioUrl(), submittedAudioUrl)) {
+            return;
+        }
+        latest.setAnswerStatus(RECORD_FAILED);
+        latest.setAiStatus(RECORD_FAILED);
+        latest.setAiProvider("aliyun");
+        latest.setAiModel(speakingScoreAiProperties.getPerQuestionModelOrDefault());
+        latest.setAiErrorMessage(e.getMessage());
+        latest.setUpdatedTime(LocalDateTime.now());
+        speakingRecordMapper.updateSpeakingRecord(latest);
+        updateSessionAfterProcessingFailure(latest.getSessionId());
+    }
+
+    private void tryCompleteSessionEvaluation(String sessionId) {
+        SpeakingSession session = speakingSessionMapper.findBySessionId(sessionId);
+        if (session == null) {
+            return;
+        }
+
+        List<SpeakingRecord> records = speakingRecordMapper.findBySessionId(sessionId);
+        long scoredCount = records == null ? 0 : records.stream()
+                .filter(r -> RECORD_SCORED.equals(r.getAnswerStatus()))
+                .count();
+        if (scoredCount < safeInt(session.getTotalQuestions())) {
+            return;
+        }
+
+        session.setExamStatus(SESSION_WAITING_FINAL_EVALUATION);
+        session.setUpdatedTime(LocalDateTime.now());
+        speakingSessionMapper.updateSpeakingSession(session);
+        finalizeSessionEvaluation(sessionId);
+    }
+
+    private void updateSessionAfterProcessingFailure(String sessionId) {
+        SpeakingSession session = speakingSessionMapper.findBySessionId(sessionId);
+        if (session == null) {
+            return;
+        }
+        List<SpeakingRecord> records = speakingRecordMapper.findBySessionId(sessionId);
+        if (records == null || records.size() < safeInt(session.getTotalQuestions())) {
+            return;
+        }
+        boolean hasFailed = records.stream().anyMatch(r -> RECORD_FAILED.equals(r.getAnswerStatus()));
+        if (hasFailed) {
+            session.setExamStatus(SESSION_FAILED);
+            session.setUpdatedTime(LocalDateTime.now());
+            speakingSessionMapper.updateSpeakingSession(session);
+        }
     }
 
     @Override
@@ -540,6 +622,9 @@ public class UserSpeakingServiceImpl implements UserSpeakingService {
         summary.setExamStatus(session.getExamStatus());
         summary.setTotalQuestions(session.getTotalQuestions());
         summary.setAnsweredCount(records == null ? 0 : records.size());
+        summary.setProcessingCount(countByAnswerStatus(records, RECORD_PROCESSING));
+        summary.setScoredCount(countByAnswerStatus(records, RECORD_SCORED));
+        summary.setFailedCount(countByAnswerStatus(records, RECORD_FAILED));
         summary.setFluencyAndCoherence(session.getFluencyAndCoherence());
         summary.setLexicalResource(session.getLexicalResource());
         summary.setGrammaticalRangeAndAccuracy(session.getGrammaticalRangeAndAccuracy());
@@ -548,6 +633,40 @@ public class UserSpeakingServiceImpl implements UserSpeakingService {
         summary.setFeedback(session.getFinalFeedback());
         summary.setRecords(recordVos);
         return summary;
+    }
+
+    @Override
+    public SpeakingTalkStatusVO getTalkStatus(String talkId, Long userId) {
+        if (talkId == null || talkId.isBlank()) {
+            throw new RuntimeException("talkId is required");
+        }
+
+        SpeakingTalk talk = speakingTalkMapper.findByTalkIdForUser(talkId, userId);
+        if (talk == null) {
+            throw new RuntimeException("Speaking talk not found");
+        }
+
+        try {
+            SpeakingTalkStatusVO remote = didSpeakingService.getTalkStatus(talkId);
+            talk.setTalkStatus(firstNonBlank(remote.getTalkStatus(), talk.getTalkStatus()));
+            talk.setVideoUrl(firstNonBlank(remote.getVideoUrl(), talk.getVideoUrl()));
+            talk.setErrorMessage(firstNonBlank(remote.getErrorMessage(), talk.getErrorMessage()));
+            talk.setUpdatedTime(LocalDateTime.now());
+            speakingTalkMapper.updateSpeakingTalk(talk);
+        } catch (Exception e) {
+            log.error("Failed to refresh D-ID talk status, talkId={}", talkId, e);
+            talk.setTalkStatus(TALK_FAILED);
+            talk.setErrorMessage(firstNonBlank(talk.getErrorMessage(), e.getMessage()));
+            talk.setUpdatedTime(LocalDateTime.now());
+            speakingTalkMapper.updateSpeakingTalk(talk);
+        }
+
+        SpeakingTalkStatusVO vo = new SpeakingTalkStatusVO();
+        vo.setTalkId(talk.getTalkId());
+        vo.setTalkStatus(talk.getTalkStatus());
+        vo.setVideoUrl(talk.getVideoUrl());
+        vo.setErrorMessage(talk.getErrorMessage());
+        return vo;
     }
 
     @Transactional
@@ -742,6 +861,20 @@ public class UserSpeakingServiceImpl implements UserSpeakingService {
             return incoming;
         }
         return fallback;
+    }
+
+    private Integer countByAnswerStatus(List<SpeakingRecord> records, String status) {
+        if (records == null || records.isEmpty()) {
+            return 0;
+        }
+        return (int) records.stream()
+                .filter(Objects::nonNull)
+                .filter(record -> status.equals(record.getAnswerStatus()))
+                .count();
+    }
+
+    private int safeInt(Integer value) {
+        return value == null ? 0 : value;
     }
 
     private <T> T firstNonNull(T incoming, T fallback) {

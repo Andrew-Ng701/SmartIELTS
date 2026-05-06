@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.andrew.smartielts.speaking.mapper.SpeakingTalkMapper">
+
+    <resultMap id="SpeakingTalkResultMap" type="com.andrew.smartielts.speaking.domain.pojo.SpeakingTalk">
+        <id property="id" column="id"/>
+        <result property="talkId" column="talk_id"/>
+        <result property="userId" column="user_id"/>
+        <result property="sessionId" column="session_id"/>
+        <result property="questionId" column="question_id"/>
+        <result property="talkStatus" column="talk_status"/>
+        <result property="videoUrl" column="video_url"/>
+        <result property="errorMessage" column="error_message"/>
+        <result property="createdTime" column="created_time"/>
+        <result property="updatedTime" column="updated_time"/>
+    </resultMap>
+
+    <sql id="BaseColumns">
+        id,
+        talk_id,
+        user_id,
+        session_id,
+        question_id,
+        talk_status,
+        video_url,
+        error_message,
+        created_time,
+        updated_time
+    </sql>
+
+    <insert id="insertSpeakingTalk" parameterType="com.andrew.smartielts.speaking.domain.pojo.SpeakingTalk"
+            useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO speaking_talk (
+            talk_id, user_id, session_id, question_id, talk_status,
+            video_url, error_message, created_time, updated_time
+        ) VALUES (
+            #{talkId}, #{userId}, #{sessionId}, #{questionId}, #{talkStatus},
+            #{videoUrl}, #{errorMessage}, #{createdTime}, #{updatedTime}
+        )
+    </insert>
+
+    <select id="findByTalkId" resultMap="SpeakingTalkResultMap">
+        SELECT <include refid="BaseColumns"/>
+        FROM speaking_talk
+        WHERE talk_id = #{talkId}
+        LIMIT 1
+    </select>
+
+    <select id="findByTalkIdForUser" resultMap="SpeakingTalkResultMap">
+        SELECT <include refid="BaseColumns"/>
+        FROM speaking_talk
+        WHERE talk_id = #{talkId}
+          AND user_id = #{userId}
+        LIMIT 1
+    </select>
+
+    <update id="updateSpeakingTalk" parameterType="com.andrew.smartielts.speaking.domain.pojo.SpeakingTalk">
+        UPDATE speaking_talk
+        SET
+            talk_status = #{talkStatus},
+            video_url = #{videoUrl},
+            error_message = #{errorMessage},
+            updated_time = #{updatedTime}
+        WHERE id = #{id}
+    </update>
+</mapper>

@@ -25,7 +25,8 @@ public interface DashboardPreloadService {
                                            Long operatorUserId,
                                            Long targetUserId,
                                            String pageName,
-                                           DashboardAskObjectRef objectRef);
+                                           DashboardAskObjectRef objectRef,
+                                           Map<String, Object> context);
 
     void evict(String role,
                Long operatorUserId,

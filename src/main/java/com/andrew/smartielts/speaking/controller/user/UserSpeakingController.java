@@ -114,6 +114,13 @@ public class UserSpeakingController {
         return Result.success(speakingService.getSessionSummary(sessionId, userId));
     }
 
+    @Operation(summary = "Get D-ID speaking talk status")
+    @GetMapping("/talks/{talkId}")
+    public Result<?> getTalkStatus(@PathVariable String talkId) {
+        Long userId = SecurityUtils.getCurrentUserId();
+        return Result.success(speakingService.getTalkStatus(talkId, userId));
+    }
+
     @Operation(summary = "Upload speaking audio to OSS")
     @PostMapping("/upload-audio")
     public Result<?> uploadAudio(

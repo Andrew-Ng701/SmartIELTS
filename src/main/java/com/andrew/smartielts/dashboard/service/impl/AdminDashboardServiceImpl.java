@@ -313,6 +313,7 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
                 targetUserId,
                 query,
                 "admin_executive_summary",
+                timeRange,
                 payload
         );
 
@@ -475,10 +476,10 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
         Map<String, Object> overview = toMap(payload.getOverview());
         Map<String, Object> progress = toMap(payload.getProgressSummary());
         Map<String, Object> aggregates = toMap(payload.getAggregates());
-        List<Map<String, Object>> moduleStats = toListOfMap(payload.getModuleStats());
         List<Map<String, Object>> recentRecords = toListOfMap(payload.getRecentRecords());
 
         String overallAvg = firstNonBlank(
+                getString(progress, "overallAverageScore"),
                 getString(progress, "overallAverage"),
                 getString(progress, "averageScore"),
                 getString(progress, "avgScore"),
@@ -493,15 +494,16 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
                 recentRecords.size()
         );
 
-        WeakModule weak = findWeakestModule(moduleStats);
+        WeakModule weak = findWeakestScoreModule(progress);
 
         List<String> parts = new ArrayList<>();
-        parts.add("目前管理視角已載入指定用戶的 dashboard 摘要資料。");
+        String rangeLabel = toZhTimeRange(timeRange);
+        parts.add("目前管理視角已載入用戶 " + targetUserId + " 的 dashboard 摘要資料。");
 
         if (hasText(overallAvg)) {
-            parts.add("最近 30 天整體平均約為 " + overallAvg + "。");
+            parts.add(rangeLabel + " 的整體平均分是 " + overallAvg + "。");
         } else {
-            parts.add("最近 30 天已有資料可供追蹤，但整體平均欄位尚未明確提供。");
+            parts.add(rangeLabel + " 目前可用分數資料不足，建議先補齊四科作答紀錄。");
         }
 
         if (recentRecordCount != null) {
@@ -509,34 +511,29 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
         }
 
         if (weak != null && hasText(weak.moduleName)) {
-            parts.add("目前相對需要優先關注的弱項模組為 " + weak.moduleName + "，建議先針對該模組安排補強。");
+            parts.add("目前相對需要優先關注的科目是 " + weak.moduleName + "，平均分約 " + weak.score + "。");
         } else {
-            parts.add("目前模組弱項尚不明顯，建議先增加近期紀錄或補齊模組統計。");
+            parts.add("目前科目弱項尚不明顯，建議先增加近期紀錄或補齊模組統計。");
         }
 
         return joinTopSentences(parts, 4);
     }
 
-    private WeakModule findWeakestModule(List<Map<String, Object>> rows) {
+    private WeakModule findWeakestScoreModule(Map<String, Object> progress) {
+        List<WeakModule> modules = List.of(
+                new WeakModule("listening", toDouble(progress.get("listeningAverageScore"))),
+                new WeakModule("reading", toDouble(progress.get("readingAverageScore"))),
+                new WeakModule("writing", toDouble(progress.get("writingAverageScore"))),
+                new WeakModule("speaking", toDouble(progress.get("speakingAverageScore")))
+        );
+
         WeakModule result = null;
-        for (Map<String, Object> row : rows) {
-            String moduleName = firstNonBlank(
-                    getString(row, "module"),
-                    getString(row, "moduleName"),
-                    getString(row, "name")
-            );
-            Double score = firstNumber(
-                    row.get("avgScore"),
-                    row.get("averageScore"),
-                    row.get("score"),
-                    row.get("overallAverage"),
-                    row.get("overall_score")
-            );
-            if (!hasText(moduleName) || score == null) {
+        for (WeakModule module : modules) {
+            if (module.score == null || module.score <= 0) {
                 continue;
             }
-            if (result == null || score < result.score) {
-                result = new WeakModule(moduleName, score);
+            if (result == null || module.score < result.score) {
+                result = module;
             }
         }
         return result;
@@ -595,6 +592,7 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
             Long targetUserId,
             String query,
             String pageName,
+            String timeRange,
             DashboardAskPreloadedPayload payload) {
 
         Map<String, Object> data = new LinkedHashMap<>();
@@ -617,7 +615,7 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
         filters.put("pageName", pageName);
         filters.put("summaryType", "executive_summary");
         filters.put("tone", "warm_teacher");
-        filters.put("timeRange", DashboardOverviewConstants.DEFAULT_TIME_RANGE);
+        filters.put("timeRange", normalizeTimeRange(timeRange));
 
         DashboardAnswerComposeResult result = dashboardAnswerComposeService.compose(
                 DashboardAnswerComposeRequest.builder()
@@ -722,6 +720,19 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
 
     private boolean hasText(String value) {
         return value != null && !value.isBlank();
+    }
+
+    private String normalizeTimeRange(String timeRange) {
+        return hasText(timeRange) ? timeRange.trim() : DashboardOverviewConstants.DEFAULT_TIME_RANGE;
+    }
+
+    private String toZhTimeRange(String timeRange) {
+        return switch (normalizeTimeRange(timeRange).toLowerCase(java.util.Locale.ROOT)) {
+            case "last7days" -> "近 7 天";
+            case "last90days" -> "近 90 天";
+            case "all" -> "全部時間";
+            default -> "近 30 天";
+        };
     }
 
     private List<String> splitSummarySentences(String text) {

@@ -74,7 +74,12 @@ public class DashboardIntentExecutionFacade {
                     ROLE_USER.equalsIgnoreCase(role) ? "user_overview" : "admin_overview");
 
             DashboardAskPreloadedPayload cachedPayload = dashboardPreloadService.getCached(
-                    role, operatorUserId, resolvedTargetUserId, pageName, safeRequest.getObjectRef()
+                    role,
+                    operatorUserId,
+                    resolvedTargetUserId,
+                    pageName,
+                    safeRequest.getObjectRef(),
+                    safeMap(safeRequest.getContext())
             );
             if (cachedPayload != null) {
                 mergedPayload = cachedPayload;
