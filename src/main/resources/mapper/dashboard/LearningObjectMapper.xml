@@ -252,17 +252,14 @@
             NULL AS transcript_text,
             NULL AS audio_url,
             NULL AS audio_object_key,
-            COALESCE(
-                    (
-                        SELECT bir.file_url
-                        FROM biz_image_resource bir
-                        WHERE bir.target_type = 'WRITING_QUESTION'
-                          AND bir.target_id = wq.id
-                          AND bir.is_deleted = 0
-                        ORDER BY bir.sort_order ASC, bir.id ASC
-                        LIMIT 1
-                    ),
-                    wq.image_url
+            (
+                SELECT bir.file_url
+                FROM biz_image_resource bir
+                WHERE bir.target_type = 'WRITING_QUESTION'
+                  AND bir.target_id = wq.id
+                  AND bir.is_deleted = 0
+                ORDER BY bir.sort_order ASC, bir.id ASC
+                LIMIT 1
             ) AS image_url,
             wq.task_type AS task_type
         FROM writing_question wq
@@ -539,11 +536,24 @@
             lq.part_group_id AS passage_id,
             lq.id AS question_id,
             lq.question_number AS question_number,
-            lq.question_text AS question_text
+            lq.question_text AS question_text,
+            lq.correct_answer AS correct_answer,
+            lq.accepted_answers_json AS accepted_answers_json,
+            lar.user_answer AS user_answer,
+            lar.is_correct AS is_correct,
+            lar.score AS score,
+            la.transcript_text AS transcript_text
         FROM listening_record lr
                  JOIN listening_question lq
                       ON lq.test_id = lr.test_id
                           AND lq.is_deleted = 0
+                 LEFT JOIN listening_audio la
+                           ON la.part_group_id = lq.part_group_id
+                               AND la.audio_scope = 'part_group'
+                               AND la.is_deleted = 0
+                 LEFT JOIN listening_answer_record lar
+                           ON lar.record_id = lr.id
+                               AND lar.question_id = lq.id
         WHERE lr.user_id = #{userId}
           AND lr.id = #{recordId}
           AND lr.is_deleted = 0
@@ -558,7 +568,12 @@
             rq.passage_id AS passage_id,
             rq.id AS question_id,
             rq.question_number AS question_number,
-            rq.question_text AS question_text
+            rq.question_text AS question_text,
+            rq.correct_answer AS correct_answer,
+            rq.accepted_answers_json AS accepted_answers_json,
+            rar.user_answer AS user_answer,
+            rar.is_correct AS is_correct,
+            rar.score AS score
         FROM reading_record rr
                  JOIN reading_passage rp
                       ON rp.test_id = rr.test_id
@@ -566,6 +581,9 @@
                  JOIN reading_question rq
                       ON rq.passage_id = rp.id
                           AND rq.is_deleted = 0
+                 LEFT JOIN reading_answer_record rar
+                           ON rar.record_id = rr.id
+                               AND rar.question_id = rq.id
         WHERE rr.user_id = #{userId}
           AND rr.id = #{recordId}
           AND rr.is_deleted = 0
@@ -942,17 +960,14 @@
             NULL AS question_transcript_text,
             NULL AS question_audio_url,
             NULL AS question_audio_object_key,
-            COALESCE(
-                    (
-                        SELECT bir.file_url
-                        FROM biz_image_resource bir
-                        WHERE bir.target_type = 'WRITING_QUESTION'
-                          AND bir.target_id = wq.id
-                          AND bir.is_deleted = 0
-                        ORDER BY bir.sort_order ASC, bir.id ASC
-                        LIMIT 1
-                    ),
-                    wq.image_url
+            (
+                SELECT bir.file_url
+                FROM biz_image_resource bir
+                WHERE bir.target_type = 'WRITING_QUESTION'
+                  AND bir.target_id = wq.id
+                  AND bir.is_deleted = 0
+                ORDER BY bir.sort_order ASC, bir.id ASC
+                LIMIT 1
             ) AS question_image_url,
             wq.task_type AS question_task_type,
 

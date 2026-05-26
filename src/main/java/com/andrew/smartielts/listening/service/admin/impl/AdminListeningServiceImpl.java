@@ -4,11 +4,11 @@ import com.andrew.smartielts.common.domain.pojo.TestPartGroup;
 import com.andrew.smartielts.common.image.domain.dto.BizImageResourceDTO;
 import com.andrew.smartielts.common.image.domain.pojo.BizImageResource;
 import com.andrew.smartielts.common.image.service.BizImageResourceService;
-import com.andrew.smartielts.common.page.PageResult;
 import com.andrew.smartielts.common.storage.BucketType;
 import com.andrew.smartielts.listening.constants.ListeningAudioConstants;
 import com.andrew.smartielts.listening.constants.ListeningConstants;
 import com.andrew.smartielts.listening.constants.ListeningQuestionConstants;
+import com.andrew.smartielts.listening.domain.dto.AdminListeningTestFullSaveDTO;
 import com.andrew.smartielts.listening.domain.dto.ListeningAudioUpsertDTO;
 import com.andrew.smartielts.listening.domain.dto.ListeningPartGroupDTO;
 import com.andrew.smartielts.listening.domain.dto.ListeningQuestionDTO;
@@ -18,14 +18,11 @@ import com.andrew.smartielts.listening.domain.pojo.ListeningAudio;
 import com.andrew.smartielts.listening.domain.pojo.ListeningQuestion;
 import com.andrew.smartielts.listening.domain.pojo.ListeningRecord;
 import com.andrew.smartielts.listening.domain.pojo.ListeningTest;
-import com.andrew.smartielts.listening.domain.query.admin.AdminListeningDeletedRecordPageQuery;
-import com.andrew.smartielts.listening.domain.query.admin.AdminListeningRecordPageQuery;
 import com.andrew.smartielts.listening.domain.vo.ListeningAnswerResultVO;
 import com.andrew.smartielts.listening.domain.vo.ListeningPartGroupVO;
 import com.andrew.smartielts.listening.domain.vo.ListeningPartVO;
 import com.andrew.smartielts.listening.domain.vo.ListeningQuestionVO;
 import com.andrew.smartielts.listening.domain.vo.ListeningRecordDetailVO;
-import com.andrew.smartielts.listening.domain.vo.ListeningRecordVO;
 import com.andrew.smartielts.listening.domain.vo.ListeningTestDetailVO;
 import com.andrew.smartielts.listening.mapper.ListeningAnswerRecordMapper;
 import com.andrew.smartielts.listening.mapper.ListeningQuestionMapper;
@@ -37,14 +34,17 @@ import com.andrew.smartielts.listening.service.admin.ListeningPartGroupService;
 import com.andrew.smartielts.listening.support.ListeningGroupAnswerRuleSupport;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
@@ -88,7 +88,8 @@ public class AdminListeningServiceImpl implements AdminListeningService {
         test.setTitle(trimToNull(dto.getTitle()));
         test.setTotalScore(dto.getTotalScore());
         test.setTimerMode(resolveTimerMode(dto.getTimerMode()));
-        test.setTotalSeconds(resolveTotalSeconds(dto.getTotalSeconds()));
+        test.setPrepSeconds(requiredPrepSeconds(dto));
+        test.setTotalSeconds(minutesToSeconds(requiredTotalMinutes(dto.getTotalMinutes())));
         test.setAutoSubmit(resolveAutoSubmit(dto.getAutoSubmit()));
         test.setAllowPause(resolveAllowPause(dto.getAllowPause()));
         test.setAllowAudioSeek(resolveAllowAudioSeek(dto.getAllowAudioSeek()));
@@ -109,7 +110,8 @@ public class AdminListeningServiceImpl implements AdminListeningService {
         existing.setTitle(trimToNull(dto.getTitle()));
         existing.setTotalScore(dto.getTotalScore());
         existing.setTimerMode(resolveTimerMode(dto.getTimerMode()));
-        existing.setTotalSeconds(resolveTotalSeconds(dto.getTotalSeconds()));
+        existing.setPrepSeconds(requiredPrepSeconds(dto));
+        existing.setTotalSeconds(minutesToSeconds(requiredTotalMinutes(dto.getTotalMinutes())));
         existing.setAutoSubmit(resolveAutoSubmit(dto.getAutoSubmit()));
         existing.setAllowPause(resolveAllowPause(dto.getAllowPause()));
         existing.setAllowAudioSeek(resolveAllowAudioSeek(dto.getAllowAudioSeek()));
@@ -117,6 +119,19 @@ public class AdminListeningServiceImpl implements AdminListeningService {
 
         listeningTestMapper.updateListeningTest(existing);
         return buildTestDetailVO(id, true);
+    }
+
+    @Override
+    @Transactional
+    public ListeningTestDetailVO saveFullTest(Long testId, AdminListeningTestFullSaveDTO dto) {
+        if (dto == null) {
+            throw new RuntimeException("listening_full_test_payload_is_required");
+        }
+        updateTest(testId, dto.getTest());
+        syncFullPartGroups(testId, dto.getPartGroups());
+        syncFullQuestions(testId, dto.getQuestions());
+        syncFullAudioReferences(testId, dto.getAudios());
+        return buildTestDetailVO(testId, true);
     }
 
     @Override
@@ -143,6 +158,8 @@ public class AdminListeningServiceImpl implements AdminListeningService {
     @Transactional
     public void deleteTest(Long id) {
         requireActiveTest(id);
+        deletePartGroupImages(listeningPartGroupService.listActiveByTestId(id));
+        deleteListeningQuestionImages(listeningQuestionMapper.findActiveByTestId(id));
         listeningQuestionMapper.softDeleteByTestId(id);
         listeningAudioService.deleteByTestId(id);
         listeningPartGroupService.deleteByTestId(id);
@@ -181,9 +198,27 @@ public class AdminListeningServiceImpl implements AdminListeningService {
 
     @Override
     @Transactional
+    public void replaceQuestionImages(Long questionId, MultipartFile[] images) {
+        requireActiveQuestion(questionId);
+        bizImageResourceService.replaceByTargetFromUploads(
+                ListeningAudioConstants.TARGET_TYPE_LISTENING_QUESTION,
+                questionId,
+                BucketType.QUESTION_GROUP_IMAGE,
+                ListeningAudioConstants.BIZ_PATH_LISTENING_QUESTION_IMAGE,
+                images
+        );
+    }
+
+    @Override
+    @Transactional
     public void deleteQuestion(Long questionId) {
         requireActiveQuestion(questionId);
         listeningQuestionMapper.softDeleteById(questionId);
+        bizImageResourceService.deleteByTargetAndObjects(
+                ListeningAudioConstants.TARGET_TYPE_LISTENING_QUESTION,
+                questionId,
+                BucketType.QUESTION_GROUP_IMAGE
+        );
     }
 
     @Override
@@ -194,46 +229,6 @@ public class AdminListeningServiceImpl implements AdminListeningService {
             throw new RuntimeException("listening_question_not_found");
         }
         listeningQuestionMapper.restoreById(questionId);
-    }
-
-    @Override
-    public PageResult<ListeningRecordVO> pageActiveRecords(AdminListeningRecordPageQuery query) {
-        AdminListeningRecordPageQuery safeQuery = query == null ? new AdminListeningRecordPageQuery() : query;
-        int pageNum = normalizePageNum(safeQuery.getPageNum());
-        int pageSize = normalizePageSize(safeQuery.getPageSize());
-        int offset = (pageNum - 1) * pageSize;
-
-        Long total = listeningRecordMapper.countAdminActive(safeQuery);
-        if (total == null || total <= 0L) {
-            return new PageResult<>(new ArrayList<>(), 0L, pageNum, pageSize);
-        }
-
-        List<ListeningRecord> records = listeningRecordMapper.pageAdminActive(safeQuery, offset, pageSize);
-        List<ListeningRecordVO> voList = records == null
-                ? new ArrayList<>()
-                : records.stream().map(this::toRecordVO).collect(Collectors.toList());
-
-        return new PageResult<>(voList, total, pageNum, pageSize);
-    }
-
-    @Override
-    public PageResult<ListeningRecordVO> pageDeletedRecords(AdminListeningDeletedRecordPageQuery query) {
-        AdminListeningDeletedRecordPageQuery safeQuery = query == null ? new AdminListeningDeletedRecordPageQuery() : query;
-        int pageNum = normalizePageNum(safeQuery.getPageNum());
-        int pageSize = normalizePageSize(safeQuery.getPageSize());
-        int offset = (pageNum - 1) * pageSize;
-
-        Long total = listeningRecordMapper.countAdminDeleted(safeQuery);
-        if (total == null || total <= 0L) {
-            return new PageResult<>(new ArrayList<>(), 0L, pageNum, pageSize);
-        }
-
-        List<ListeningRecord> records = listeningRecordMapper.pageAdminDeleted(safeQuery, offset, pageSize);
-        List<ListeningRecordVO> voList = records == null
-                ? new ArrayList<>()
-                : records.stream().map(this::toRecordVO).collect(Collectors.toList());
-
-        return new PageResult<>(voList, total, pageNum, pageSize);
     }
 
     @Override
@@ -302,6 +297,7 @@ public class AdminListeningServiceImpl implements AdminListeningService {
                         (a, b) -> a,
                         LinkedHashMap::new
                 ));
+        Map<Long, List<BizImageResource>> questionImageMap = findQuestionImageMap(questions);
 
         List<ListeningQuestionVO> questionVOList = questions.stream()
                 .filter(Objects::nonNull)
@@ -309,6 +305,7 @@ public class AdminListeningServiceImpl implements AdminListeningService {
                 .peek(vo -> vo.setGroupImages(new ArrayList<>(
                         partGroupImageMap.getOrDefault(vo.getPartGroupId(), new ArrayList<>())
                 )))
+                .peek(vo -> vo.setImages(toBizImageResourceDTOList(questionImageMap.get(vo.getId()))))
                 .sorted(Comparator
                         .comparing(ListeningQuestionVO::getDisplayOrder, Comparator.nullsLast(Integer::compareTo))
                         .thenComparing(ListeningQuestionVO::getQuestionNumber, Comparator.nullsLast(Integer::compareTo))
@@ -320,7 +317,10 @@ public class AdminListeningServiceImpl implements AdminListeningService {
         detailVO.setTitle(test.getTitle());
         detailVO.setTotalScore(test.getTotalScore());
         detailVO.setTimerMode(test.getTimerMode());
-        detailVO.setTotalSeconds(test.getTotalSeconds());
+        detailVO.setPrepSeconds(resolvePrepSeconds(test));
+        detailVO.setTotalSeconds(resolveTotalSeconds(test));
+        detailVO.setPrepMinutes(secondsToMinutes(detailVO.getPrepSeconds()));
+        detailVO.setTotalMinutes(secondsToMinutes(detailVO.getTotalSeconds()));
         detailVO.setAutoSubmit(test.getAutoSubmit());
         detailVO.setAllowPause(test.getAllowPause());
         detailVO.setAllowAudioSeek(resolveAllowAudioSeek(test.getAllowAudioSeek()));
@@ -377,6 +377,7 @@ public class AdminListeningServiceImpl implements AdminListeningService {
                         (a, b) -> a,
                         LinkedHashMap::new
                 ));
+        Map<Long, List<BizImageResource>> questionImageMap = findQuestionImageMap(questions);
 
         Map<Long, ListeningAnswerRecord> answerMap = answerRecords.stream()
                 .filter(Objects::nonNull)
@@ -394,6 +395,7 @@ public class AdminListeningServiceImpl implements AdminListeningService {
                 .peek(vo -> vo.setGroupImages(new ArrayList<>(
                         partGroupImageMap.getOrDefault(vo.getPartGroupId(), new ArrayList<>())
                 )))
+                .peek(vo -> vo.setImages(toBizImageResourceDTOList(questionImageMap.get(vo.getId()))))
                 .sorted(Comparator
                         .comparing(ListeningQuestionVO::getDisplayOrder, Comparator.nullsLast(Integer::compareTo))
                         .thenComparing(ListeningQuestionVO::getQuestionNumber, Comparator.nullsLast(Integer::compareTo))
@@ -455,11 +457,11 @@ public class AdminListeningServiceImpl implements AdminListeningService {
         ListeningQuestion question = new ListeningQuestion();
         question.setTestId(testId);
         question.setPartGroupId(dto.getPartGroupId());
-        question.setSectionNumber(defaultInt(dto.getSectionNumber(), 1));
+        question.setSectionNumber(resolveSectionNumberFromPartGroup(testId, dto));
         question.setQuestionNumber(dto.getQuestionNumber());
         question.setQuestionType(normalizeQuestionType(dto.getQuestionType()));
         question.setAnswerMode(resolveAnswerMode(dto.getQuestionType(), dto.getAnswerMode()));
-        question.setQuestionText(trimToNull(dto.getQuestionText()));
+        question.setQuestionText(preserveTextOrNull(dto.getQuestionText()));
         question.setCorrectAnswer(trimToNull(dto.getCorrectAnswer()));
         question.setOptionsJson(trimToNull(dto.getOptionsJson()));
         question.setAcceptedAnswersJson(trimToNull(dto.getAcceptedAnswersJson()));
@@ -480,11 +482,11 @@ public class AdminListeningServiceImpl implements AdminListeningService {
         question.setId(existing.getId());
         question.setTestId(existing.getTestId());
         question.setPartGroupId(dto.getPartGroupId());
-        question.setSectionNumber(defaultInt(dto.getSectionNumber(), 1));
+        question.setSectionNumber(resolveSectionNumberFromPartGroup(existing.getTestId(), dto));
         question.setQuestionNumber(dto.getQuestionNumber());
         question.setQuestionType(normalizeQuestionType(dto.getQuestionType()));
         question.setAnswerMode(resolveAnswerMode(dto.getQuestionType(), dto.getAnswerMode()));
-        question.setQuestionText(trimToNull(dto.getQuestionText()));
+        question.setQuestionText(preserveTextOrNull(dto.getQuestionText()));
         question.setCorrectAnswer(trimToNull(dto.getCorrectAnswer()));
         question.setOptionsJson(trimToNull(dto.getOptionsJson()));
         question.setAcceptedAnswersJson(trimToNull(dto.getAcceptedAnswersJson()));
@@ -536,18 +538,210 @@ public class AdminListeningServiceImpl implements AdminListeningService {
         if (partGroupId == null) {
             return;
         }
+        if (images == null) {
+            return;
+        }
 
-        List<BizImageResourceDTO> safeImages = images == null
-                ? new ArrayList<>()
-                : images.stream().filter(Objects::nonNull).collect(Collectors.toList());
+        List<BizImageResourceDTO> safeImages = images.stream().filter(Objects::nonNull).collect(Collectors.toList());
 
         bizImageResourceService.replaceByTarget(
                 ListeningAudioConstants.TARGET_TYPE_LISTENING_PART_GROUP,
                 partGroupId,
                 BucketType.QUESTION_GROUP_IMAGE.getKey(),
-                ListeningAudioConstants.BIZ_PATH_QUESTION_GROUP_IMAGE,
+                ListeningAudioConstants.BIZ_PATH_LISTENING_PART_GROUP_IMAGE,
                 safeImages
         );
+    }
+
+    private void replaceQuestionImages(Long questionId, List<BizImageResourceDTO> images) {
+        if (questionId == null || images == null) {
+            return;
+        }
+        bizImageResourceService.replaceByTarget(
+                ListeningAudioConstants.TARGET_TYPE_LISTENING_QUESTION,
+                questionId,
+                BucketType.QUESTION_GROUP_IMAGE.getKey(),
+                ListeningAudioConstants.BIZ_PATH_LISTENING_QUESTION_IMAGE,
+                images
+        );
+    }
+
+    private void syncFullPartGroups(Long testId, List<TestPartGroup> incomingPartGroups) {
+        if (incomingPartGroups == null) {
+            return;
+        }
+        Set<Long> incomingIds = incomingPartGroups.stream()
+                .filter(Objects::nonNull)
+                .map(TestPartGroup::getId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+
+        for (TestPartGroup existingPartGroup : safeList(listeningPartGroupService.listAnyByTestId(testId))) {
+            if (existingPartGroup == null || existingPartGroup.getId() == null) {
+                continue;
+            }
+            if (!incomingIds.contains(existingPartGroup.getId())) {
+                listeningQuestionMapper.softDeleteByPartGroupId(existingPartGroup.getId());
+                listeningAudioService.deleteByPartGroupId(existingPartGroup.getId());
+                listeningPartGroupService.deleteById(existingPartGroup.getId());
+            }
+        }
+
+        for (TestPartGroup incomingPartGroup : incomingPartGroups) {
+            if (incomingPartGroup == null) {
+                continue;
+            }
+            incomingPartGroup.setTestId(testId);
+            incomingPartGroup.setIsDeleted(ListeningConstants.NOT_DELETED);
+            TestPartGroup savedPartGroup;
+            if (incomingPartGroup.getId() == null) {
+                savedPartGroup = listeningPartGroupService.createPartGroup(incomingPartGroup);
+            } else {
+                TestPartGroup existing = listeningPartGroupService.getAnyById(incomingPartGroup.getId());
+                if (existing == null || !Objects.equals(existing.getTestId(), testId)) {
+                    throw new RuntimeException("listening_part_group_not_found");
+                }
+                savedPartGroup = listeningPartGroupService.updatePartGroup(incomingPartGroup.getId(), incomingPartGroup);
+                listeningPartGroupService.restoreById(incomingPartGroup.getId());
+            }
+            replacePartGroupImages(savedPartGroup.getId(), toBizImageResourceDTOList(incomingPartGroup.getImages()));
+        }
+    }
+
+    private void syncFullQuestions(Long testId, List<ListeningQuestionDTO> incomingQuestions) {
+        if (incomingQuestions == null) {
+            return;
+        }
+        Set<Long> incomingIds = incomingQuestions.stream()
+                .filter(Objects::nonNull)
+                .map(ListeningQuestionDTO::getId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+
+        for (ListeningQuestion existingQuestion : safeList(listeningQuestionMapper.findAnyByTestId(testId))) {
+            if (existingQuestion == null || existingQuestion.getId() == null) {
+                continue;
+            }
+            if (!incomingIds.contains(existingQuestion.getId())) {
+                listeningQuestionMapper.softDeleteById(existingQuestion.getId());
+            }
+        }
+
+        for (ListeningQuestionDTO questionDTO : incomingQuestions) {
+            if (questionDTO == null) {
+                continue;
+            }
+            questionDTO.setTestId(testId);
+            validatePartGroup(testId, questionDTO.getPartGroupId());
+            if (questionDTO.getId() == null) {
+                createQuestion(testId, questionDTO);
+            } else {
+                ListeningQuestion existing = listeningQuestionMapper.findAnyById(questionDTO.getId());
+                if (existing == null || !Objects.equals(existing.getTestId(), testId)) {
+                    throw new RuntimeException("listening_question_not_found");
+                }
+                updateQuestion(questionDTO.getId(), questionDTO);
+                listeningQuestionMapper.restoreById(questionDTO.getId());
+            }
+
+            Long questionId = questionDTO.getId() == null ? newestQuestionId(testId, questionDTO) : questionDTO.getId();
+            if (questionDTO.getImages() != null) {
+                replaceQuestionImages(questionId, questionDTO.getImages());
+            }
+            if (questionDTO.getGroupImages() != null && questionDTO.getPartGroupId() != null) {
+                replacePartGroupImages(questionDTO.getPartGroupId(), questionDTO.getGroupImages());
+            }
+        }
+    }
+
+    private void syncFullAudioReferences(Long testId, List<ListeningAudioUpsertDTO> incomingAudios) {
+        if (incomingAudios == null) {
+            return;
+        }
+        Set<Long> incomingIds = incomingAudios.stream()
+                .filter(Objects::nonNull)
+                .map(ListeningAudioUpsertDTO::getId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+
+        for (ListeningAudio audio : safeList(listeningAudioService.listByTestId(testId))) {
+            if (audio != null && audio.getId() != null && !incomingIds.contains(audio.getId())) {
+                listeningAudioService.deleteById(audio.getId());
+            }
+        }
+        for (ListeningAudioUpsertDTO audioDTO : incomingAudios) {
+            if (audioDTO == null || audioDTO.getId() == null) {
+                continue;
+            }
+            ListeningAudio audio = listeningAudioService.getById(audioDTO.getId());
+            if (audio == null || !Objects.equals(audio.getTestId(), testId)) {
+                throw new RuntimeException("listening_audio_not_found");
+            }
+            if (audioDTO.getTitle() != null || audioDTO.getTranscriptText() != null) {
+                listeningAudioService.updateAudioMetadata(audioDTO.getId(), audioDTO.getTitle(), audioDTO.getTranscriptText());
+            }
+        }
+    }
+
+    private Long newestQuestionId(Long testId, ListeningQuestionDTO dto) {
+        return safeList(listeningQuestionMapper.findAnyByTestId(testId)).stream()
+                .filter(item -> Objects.equals(item.getPartGroupId(), dto.getPartGroupId()))
+                .filter(item -> Objects.equals(item.getQuestionNumber(), dto.getQuestionNumber()))
+                .map(ListeningQuestion::getId)
+                .filter(Objects::nonNull)
+                .max(Long::compareTo)
+                .orElse(null);
+    }
+
+    private void deletePartGroupImages(List<TestPartGroup> partGroups) {
+        if (partGroups == null || partGroups.isEmpty()) {
+            return;
+        }
+        for (TestPartGroup partGroup : partGroups) {
+            if (partGroup == null || partGroup.getId() == null) {
+                continue;
+            }
+            bizImageResourceService.deleteByTargetAndObjects(
+                    ListeningAudioConstants.TARGET_TYPE_LISTENING_PART_GROUP,
+                    partGroup.getId(),
+                    BucketType.QUESTION_GROUP_IMAGE
+            );
+        }
+    }
+
+    private void deleteListeningQuestionImages(List<ListeningQuestion> questions) {
+        if (questions == null || questions.isEmpty()) {
+            return;
+        }
+        for (ListeningQuestion question : questions) {
+            if (question == null || question.getId() == null) {
+                continue;
+            }
+            bizImageResourceService.deleteByTargetAndObjects(
+                    ListeningAudioConstants.TARGET_TYPE_LISTENING_QUESTION,
+                    question.getId(),
+                    BucketType.QUESTION_GROUP_IMAGE
+            );
+        }
+    }
+
+    private Map<Long, List<BizImageResource>> findQuestionImageMap(List<ListeningQuestion> questions) {
+        List<Long> questionIds = questions == null
+                ? new ArrayList<>()
+                : questions.stream()
+                .filter(Objects::nonNull)
+                .map(ListeningQuestion::getId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .collect(Collectors.toList());
+        if (questionIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        Map<Long, List<BizImageResource>> imageMap = bizImageResourceService.listByTargets(
+                ListeningAudioConstants.TARGET_TYPE_LISTENING_QUESTION,
+                questionIds
+        );
+        return imageMap == null ? Collections.emptyMap() : imageMap;
     }
 
     private ListeningQuestionVO toQuestionVO(ListeningQuestion question) {
@@ -570,20 +764,6 @@ public class AdminListeningServiceImpl implements AdminListeningService {
         return vo;
     }
 
-    private ListeningRecordVO toRecordVO(ListeningRecord record) {
-        ListeningRecordVO vo = new ListeningRecordVO();
-        vo.setId(record.getId());
-        vo.setUserId(record.getUserId());
-        vo.setTestId(record.getTestId());
-        vo.setTotalScore(record.getTotalScore());
-        vo.setCreatedTime(record.getCreatedTime());
-        vo.setIsDeleted(record.getIsDeleted());
-
-        ListeningTest test = listeningTestMapper.findAnyById(record.getTestId());
-        vo.setTestTitle(test == null ? null : test.getTitle());
-        return vo;
-    }
-
     private String buildDisplayCorrectAnswer(ListeningQuestion question, TestPartGroup partGroup) {
         ListeningGroupAnswerRuleSupport.ResolvedRule resolvedRule =
                 listeningGroupAnswerRuleSupport.resolve(question, partGroup);
@@ -598,6 +778,8 @@ public class AdminListeningServiceImpl implements AdminListeningService {
         if (trimToNull(dto.getTitle()) == null) {
             throw new RuntimeException("listening_test_title_is_required");
         }
+        requiredPrepSeconds(dto);
+        requiredTotalMinutes(dto.getTotalMinutes());
     }
 
     private void validateListeningQuestionDto(ListeningQuestionDTO dto) {
@@ -610,7 +792,7 @@ public class AdminListeningServiceImpl implements AdminListeningService {
         if (trimToNull(dto.getQuestionType()) == null) {
             throw new RuntimeException("question_type_is_required");
         }
-        if (trimToNull(dto.getQuestionText()) == null) {
+        if (preserveTextOrNull(dto.getQuestionText()) == null) {
             throw new RuntimeException("question_text_is_required");
         }
     }
@@ -622,6 +804,18 @@ public class AdminListeningServiceImpl implements AdminListeningService {
                 throw new RuntimeException("listening_part_group_does_not_belong_to_test");
             }
         }
+    }
+
+    private Integer resolveSectionNumberFromPartGroup(Long testId, ListeningQuestionDTO dto) {
+        if (dto == null || dto.getPartGroupId() == null) {
+            return defaultInt(dto == null ? null : dto.getSectionNumber(), 1);
+        }
+
+        TestPartGroup partGroup = requireActivePartGroup(dto.getPartGroupId());
+        if (!Objects.equals(partGroup.getTestId(), testId)) {
+            throw new RuntimeException("listening_part_group_does_not_belong_to_test");
+        }
+        return defaultInt(partGroup.getPartNumber(), defaultInt(dto.getSectionNumber(), 1));
     }
 
     private ListeningTest requireActiveTest(Long testId) {
@@ -678,8 +872,57 @@ public class AdminListeningServiceImpl implements AdminListeningService {
         return normalized == null ? ListeningConstants.TIMER_MODE_TEST_LEVEL : normalized;
     }
 
-    private Integer resolveTotalSeconds(Integer totalSeconds) {
-        return defaultInt(totalSeconds, ListeningConstants.DEFAULT_TOTAL_SECONDS);
+    private Integer requiredPrepMinutes(Integer prepMinutes) {
+        if (prepMinutes == null) {
+            throw new RuntimeException("prepMinutes is required");
+        }
+        if (prepMinutes < 0) {
+            throw new RuntimeException("prepMinutes cannot be negative");
+        }
+        return prepMinutes;
+    }
+
+    private Integer requiredPrepSeconds(ListeningTestDTO dto) {
+        Integer prepSeconds = dto.getPrepSeconds();
+        if (prepSeconds != null) {
+            if (prepSeconds < 0) {
+                throw new RuntimeException("prepSeconds cannot be negative");
+            }
+            return prepSeconds;
+        }
+        return minutesToSeconds(requiredPrepMinutes(dto.getPrepMinutes()));
+    }
+
+    private Integer requiredTotalMinutes(Integer totalMinutes) {
+        if (totalMinutes == null) {
+            throw new RuntimeException("totalMinutes is required");
+        }
+        if (totalMinutes <= 0) {
+            throw new RuntimeException("totalMinutes must be greater than 0");
+        }
+        return totalMinutes;
+    }
+
+    private Integer minutesToSeconds(Integer minutes) {
+        return minutes == null ? null : minutes * 60;
+    }
+
+    private Integer secondsToMinutes(Integer seconds) {
+        return seconds == null ? null : seconds / 60;
+    }
+
+    private Integer resolvePrepSeconds(ListeningTest test) {
+        if (test == null || test.getPrepSeconds() == null || test.getPrepSeconds() < 0) {
+            return ListeningConstants.DEFAULT_PREP_SECONDS;
+        }
+        return test.getPrepSeconds();
+    }
+
+    private Integer resolveTotalSeconds(ListeningTest test) {
+        if (test == null || test.getTotalSeconds() == null || test.getTotalSeconds() <= 0) {
+            return ListeningConstants.DEFAULT_TOTAL_SECONDS;
+        }
+        return test.getTotalSeconds();
     }
 
     private Integer resolveAutoSubmit(Integer autoSubmit) {
@@ -856,19 +1099,12 @@ public class AdminListeningServiceImpl implements AdminListeningService {
         return dto;
     }
 
-    private int normalizePageNum(Integer pageNum) {
-        return pageNum == null || pageNum < 1 ? 1 : pageNum;
-    }
-
-    private int normalizePageSize(Integer pageSize) {
-        if (pageSize == null || pageSize < 1) {
-            return 10;
-        }
-        return Math.min(pageSize, 100);
-    }
-
     private Integer defaultInt(Integer value, Integer defaultValue) {
         return value == null ? defaultValue : value;
+    }
+
+    private <T> List<T> safeList(List<T> source) {
+        return source == null ? new ArrayList<>() : source;
     }
 
     private String trimToNull(String value) {
@@ -877,5 +1113,12 @@ public class AdminListeningServiceImpl implements AdminListeningService {
         }
         String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private String preserveTextOrNull(String value) {
+        if (value == null || value.trim().isEmpty()) {
+            return null;
+        }
+        return value;
     }
 }

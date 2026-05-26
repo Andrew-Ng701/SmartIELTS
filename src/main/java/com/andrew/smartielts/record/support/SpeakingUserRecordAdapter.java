@@ -21,9 +21,12 @@ import java.util.List;
 public class SpeakingUserRecordAdapter implements UserRecordAdapter {
 
     private final UserSpeakingService userSpeakingService;
+    private final RecordReviewBuilder recordReviewBuilder;
 
-    public SpeakingUserRecordAdapter(UserSpeakingService userSpeakingService) {
+    public SpeakingUserRecordAdapter(UserSpeakingService userSpeakingService,
+                                     RecordReviewBuilder recordReviewBuilder) {
         this.userSpeakingService = userSpeakingService;
+        this.recordReviewBuilder = recordReviewBuilder;
     }
 
     @Override
@@ -48,11 +51,13 @@ public class SpeakingUserRecordAdapter implements UserRecordAdapter {
     @Override
     public UserRecordDetailVO getRecord(Long userId, Long recordId) {
         SpeakingRecordDetailVO detail = userSpeakingService.getRecord(recordId, userId);
+        var sessionSummary = userSpeakingService.getSessionSummary(detail.getSessionId(), userId);
         UserRecordDetailVO vo = new UserRecordDetailVO();
         vo.setModuleType(moduleType());
         vo.setRecordId(recordId);
         vo.setDetailType(UserRecordDetailTypeConstants.SPEAKING_RECORD_DETAIL);
         vo.setDetail(detail);
+        vo.setReview(recordReviewBuilder.buildSpeaking(userId, detail, sessionSummary));
         return vo;
     }
 

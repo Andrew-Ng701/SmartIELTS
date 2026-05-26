@@ -12,4 +12,6 @@ public class UserRecordDetailVO {
     private String detailType;
 
     private Object detail;
+
+    private Object review;
 }

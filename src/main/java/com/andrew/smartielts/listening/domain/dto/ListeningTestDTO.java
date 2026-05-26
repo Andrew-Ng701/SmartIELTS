@@ -13,7 +13,11 @@ public class ListeningTestDTO {
 
     private String timerMode;
 
-    private Integer totalSeconds;
+    private Integer prepMinutes;
+
+    private Integer totalMinutes;
+
+    private Integer prepSeconds;
 
     private Integer autoSubmit;
 

@@ -2,9 +2,9 @@ package com.andrew.smartielts.user.domain.vo;
 
 import lombok.Data;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Map;
 
 @Data
 public class UserAdminDetailVO {
@@ -27,11 +27,17 @@ public class UserAdminDetailVO {
 
     private String profilePictureObjectKey;
 
+    private BigDecimal listeningTargetScore;
+
+    private BigDecimal readingTargetScore;
+
+    private BigDecimal writingTargetScore;
+
+    private BigDecimal speakingTargetScore;
+
     private Long totalActiveRecordCount;
 
     private Long totalDeletedRecordCount;
 
     private List<UserRecordCountVO> recordCounts;
-
-    private Map<String, UserAdminRecordPagesVO> recordsByModule;
 }

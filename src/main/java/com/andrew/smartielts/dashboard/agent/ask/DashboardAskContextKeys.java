@@ -42,6 +42,7 @@ public final class DashboardAskContextKeys {
     public static final String CONTEXT_KEY_AI_SCORE = "ai_score";
     public static final String CONTEXT_KEY_CREATED_TIME = "created_time";
     public static final String CONTEXT_KEY_RECENT_RECORDS = "recent_records";
+    public static final String CONTEXT_KEY_RECORD_QUESTIONS = "record_questions";
     public static final String CONTEXT_KEY_MODULE_STATS = "module_stats";
     public static final String CONTEXT_KEY_RECENT_QUESTIONS = "recent_questions";
     public static final String CONTEXT_KEY_RECENT_PASSAGES = "recent_passages";

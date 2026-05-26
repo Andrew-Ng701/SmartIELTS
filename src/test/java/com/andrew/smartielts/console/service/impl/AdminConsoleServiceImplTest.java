@@ -1,9 +1,11 @@
 package com.andrew.smartielts.console.service.impl;
 
+import com.andrew.smartielts.console.domain.vo.AdminConsoleVO;
 import com.andrew.smartielts.console.service.LearningConsoleQueryService;
-import com.andrew.smartielts.dashboard.domain.vo.AdminDashboardOverviewVisualVO;
+import com.andrew.smartielts.dashboard.domain.vo.AdminAiFailureVO;
 import com.andrew.smartielts.dashboard.domain.vo.AdminModuleStatVO;
-import com.andrew.smartielts.dashboard.domain.vo.AdminUserRecordSummaryVO;
+import com.andrew.smartielts.dashboard.domain.vo.AdminOverviewVO;
+import com.andrew.smartielts.dashboard.domain.vo.AdminUserCountVO;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -23,28 +25,41 @@ class AdminConsoleServiceImplTest {
     private LearningConsoleQueryService learningConsoleQueryService;
 
     @Test
-    void overviewVisual_shouldUseConsoleQueryAndBuildCharts() {
+    void console_shouldBuildFullPayloadWithLeaderboardsAndThreeCharts() {
         AdminConsoleServiceImpl service = new AdminConsoleServiceImpl(learningConsoleQueryService);
+        AdminOverviewVO overview = new AdminOverviewVO();
+        overview.setTotalActiveRecords(10L);
+        overview.setTotalDeletedRecords(1L);
+        AdminUserCountVO userCount = new AdminUserCountVO();
+        userCount.setTotalUsers(9L);
+        userCount.setActiveUsers(8L);
+        userCount.setDeletedUsers(1L);
         AdminModuleStatVO module = new AdminModuleStatVO();
         module.setModule("writing");
         module.setActiveCount(4L);
         module.setDeletedCount(1L);
-        AdminUserRecordSummaryVO overview = new AdminUserRecordSummaryVO();
-        overview.setUserId(9L);
-        overview.setTotalActiveRecords(10L);
-        overview.setTotalDeletedRecords(1L);
+        AdminAiFailureVO failure = new AdminAiFailureVO();
+        failure.setModule("writing");
+        failure.setFailureCount(2L);
 
-        when(learningConsoleQueryService.adminUserRecordSummary(9L)).thenReturn(overview);
+        when(learningConsoleQueryService.adminOverview()).thenReturn(overview);
+        when(learningConsoleQueryService.adminUserCount()).thenReturn(userCount);
         when(learningConsoleQueryService.adminModuleStats()).thenReturn(List.of(module));
+        when(learningConsoleQueryService.adminAiFailureSummary()).thenReturn(List.of(failure));
+        when(learningConsoleQueryService.adminRecentIssues()).thenReturn(List.of());
+        when(learningConsoleQueryService.adminUserLeaderboards(10)).thenReturn(List.of());
 
-        AdminDashboardOverviewVisualVO result = service.overviewVisual(1L, 9L, "last30days");
+        AdminConsoleVO result = service.console();
 
         assertNotNull(result.getSnapshotId());
-        assertEquals(overview, result.getOverview());
-        assertEquals(List.of(module), result.getModuleStats());
-        assertEquals("bar", result.getModuleBarChart().get("chart_type"));
-        assertEquals(9L, result.getAggregates().get("target_user_id"));
-        verify(learningConsoleQueryService).adminUserRecordSummary(9L);
-        verify(learningConsoleQueryService).adminModuleStats();
+        assertEquals(9L, result.getKpis().getTotalUsers());
+        assertEquals(2L, result.getKpis().getAiFailureCount());
+        assertEquals(1, result.getModuleStats().size());
+        assertEquals(0, result.getRecentIssues().size());
+        assertEquals(5, result.getQuickLinks().size());
+        assertEquals(0, result.getLeaderboards().size());
+        assertEquals(3, result.getCharts().size());
+        assertEquals("moduleRecordsBar", result.getCharts().get(0).getCode());
+        verify(learningConsoleQueryService).adminUserLeaderboards(10);
     }
 }

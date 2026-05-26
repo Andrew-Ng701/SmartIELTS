@@ -32,15 +32,7 @@ public interface ListeningRecordMapper {
 
     Long countAdminActive(@Param("query") AdminListeningRecordPageQuery query);
 
-    List<ListeningRecord> pageAdminActive(@Param("query") AdminListeningRecordPageQuery query,
-                                          @Param("offset") Integer offset,
-                                          @Param("limit") Integer limit);
-
     Long countAdminDeleted(@Param("query") AdminListeningDeletedRecordPageQuery query);
-
-    List<ListeningRecord> pageAdminDeleted(@Param("query") AdminListeningDeletedRecordPageQuery query,
-                                           @Param("offset") Integer offset,
-                                           @Param("limit") Integer limit);
 
     ListeningRecord findAnyById(@Param("id") Long id);
 

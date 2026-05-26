@@ -45,6 +45,60 @@ class ReadingPartGroupServiceImplTest {
     }
 
     @Test
+    void createPartGroup_shouldMergeHeadingMatchingIntoMatching() {
+        ReadingPartGroupServiceImpl service = new ReadingPartGroupServiceImpl(readingPartGroupMapper);
+        TestPartGroup group = new TestPartGroup();
+        group.setTestId(1L);
+        group.setPartNumber(1);
+        group.setQuestionType("matching headings");
+        group.setAnswerMode("single");
+
+        service.createPartGroup(group);
+
+        ArgumentCaptor<TestPartGroup> captor = ArgumentCaptor.forClass(TestPartGroup.class);
+        verify(readingPartGroupMapper).insertReadingPartGroup(captor.capture());
+        TestPartGroup saved = captor.getValue();
+        assertEquals(ReadingQuestionConstants.QUESTION_TYPE_MATCHING, saved.getQuestionType());
+        assertEquals(ReadingQuestionConstants.ANSWER_MODE_SINGLE, saved.getAnswerMode());
+    }
+
+    @Test
+    void createPartGroup_shouldSupportReadingCompletionTypesUsedByListening() {
+        ReadingPartGroupServiceImpl service = new ReadingPartGroupServiceImpl(readingPartGroupMapper);
+        TestPartGroup group = new TestPartGroup();
+        group.setTestId(1L);
+        group.setPartNumber(1);
+        group.setQuestionType("note completion");
+
+        service.createPartGroup(group);
+
+        ArgumentCaptor<TestPartGroup> captor = ArgumentCaptor.forClass(TestPartGroup.class);
+        verify(readingPartGroupMapper).insertReadingPartGroup(captor.capture());
+        TestPartGroup saved = captor.getValue();
+        assertEquals(ReadingQuestionConstants.QUESTION_TYPE_NOTE_COMPLETION, saved.getQuestionType());
+        assertEquals(ReadingQuestionConstants.ANSWER_MODE_TEXT, saved.getAnswerMode());
+    }
+
+    @Test
+    void createPartGroup_shouldNormalizeMatchingAnswerBankOptions() {
+        ReadingPartGroupServiceImpl service = new ReadingPartGroupServiceImpl(readingPartGroupMapper);
+        TestPartGroup group = new TestPartGroup();
+        group.setTestId(1L);
+        group.setPartNumber(1);
+        group.setQuestionType("MATCHING");
+        group.setOptionsJson("[\"Dr Peter Forster & Dr Alfred Toth\",\"Dr Merritt Ruhlen\",\"Dr Colin Renfrew\"]");
+
+        service.createPartGroup(group);
+
+        ArgumentCaptor<TestPartGroup> captor = ArgumentCaptor.forClass(TestPartGroup.class);
+        verify(readingPartGroupMapper).insertReadingPartGroup(captor.capture());
+        TestPartGroup saved = captor.getValue();
+        assertEquals("[{\"label\":\"A\",\"text\":\"Dr Peter Forster & Dr Alfred Toth\"},"
+                + "{\"label\":\"B\",\"text\":\"Dr Merritt Ruhlen\"},"
+                + "{\"label\":\"C\",\"text\":\"Dr Colin Renfrew\"}]", saved.getOptionsJson());
+    }
+
+    @Test
     void createPartGroup_whenUnsupportedQuestionType_shouldThrow() {
         ReadingPartGroupServiceImpl service = new ReadingPartGroupServiceImpl(readingPartGroupMapper);
         TestPartGroup group = new TestPartGroup();

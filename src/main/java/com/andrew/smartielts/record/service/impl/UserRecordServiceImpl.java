@@ -1,11 +1,18 @@
 package com.andrew.smartielts.record.service.impl;
 
 import com.andrew.smartielts.common.page.PageResult;
+import com.andrew.smartielts.listening.domain.vo.ListeningSectionScriptVO;
+import com.andrew.smartielts.listening.service.user.UserListeningService;
+import com.andrew.smartielts.record.constants.UserRecordListSortConstants;
+import com.andrew.smartielts.record.constants.UserRecordListStatusConstants;
 import com.andrew.smartielts.record.constants.UserRecordModuleConstants;
 import com.andrew.smartielts.record.constants.UserRecordStateConstants;
+import com.andrew.smartielts.record.domain.query.UserRecordListQuery;
 import com.andrew.smartielts.record.domain.query.UserRecordPageQuery;
 import com.andrew.smartielts.record.domain.vo.UserRecordDetailVO;
 import com.andrew.smartielts.record.domain.vo.UserRecordItemVO;
+import com.andrew.smartielts.record.domain.vo.UserRecordListItemVO;
+import com.andrew.smartielts.record.mapper.UserRecordListMapper;
 import com.andrew.smartielts.record.service.UserRecordService;
 import com.andrew.smartielts.record.support.UserRecordAdapter;
 import com.andrew.smartielts.speaking.domain.vo.SpeakingSessionSummaryVO;
@@ -20,16 +27,50 @@ import java.util.Map;
 public class UserRecordServiceImpl implements UserRecordService {
 
     private final Map<String, UserRecordAdapter> adapterMap;
+    private final UserListeningService userListeningService;
     private final UserSpeakingService userSpeakingService;
+    private final UserRecordListMapper userRecordListMapper;
 
-    public UserRecordServiceImpl(List<UserRecordAdapter> adapters, UserSpeakingService userSpeakingService) {
+    public UserRecordServiceImpl(List<UserRecordAdapter> adapters,
+                                 UserListeningService userListeningService,
+                                 UserSpeakingService userSpeakingService,
+                                 UserRecordListMapper userRecordListMapper) {
         this.adapterMap = new HashMap<>();
         if (adapters != null) {
             for (UserRecordAdapter adapter : adapters) {
                 adapterMap.put(adapter.moduleType(), adapter);
             }
         }
+        this.userListeningService = userListeningService;
         this.userSpeakingService = userSpeakingService;
+        this.userRecordListMapper = userRecordListMapper;
+    }
+
+    @Override
+    public PageResult<UserRecordListItemVO> listRecords(Long userId, UserRecordListQuery query) {
+        validateUserId(userId);
+        UserRecordListQuery safeQuery = query == null ? new UserRecordListQuery() : query;
+        validateListQuery(safeQuery);
+
+        String recordState = UserRecordStateConstants.normalize(safeQuery.getRecordState());
+        String module = normalizeOptionalModule(safeQuery.getModule());
+        String status = UserRecordListStatusConstants.normalize(safeQuery.getStatus());
+        String sort = UserRecordListSortConstants.normalize(safeQuery.getSort());
+        int pageNum = safeQuery.getPageNum();
+        int pageSize = safeQuery.getPageSize();
+        int offset = (pageNum - 1) * pageSize;
+
+        Long total = userRecordListMapper.countUserRecords(userId, recordState, module, status);
+        List<UserRecordListItemVO> list = userRecordListMapper.pageUserRecords(
+                userId,
+                recordState,
+                module,
+                status,
+                sort,
+                offset,
+                pageSize
+        );
+        return new PageResult<>(list == null ? List.of() : list, total == null ? 0L : total, pageNum, pageSize);
     }
 
     @Override
@@ -48,6 +89,16 @@ public class UserRecordServiceImpl implements UserRecordService {
         validateRecordId(recordId);
         String normalizedModuleType = UserRecordModuleConstants.normalize(moduleType);
         return requireAdapter(normalizedModuleType).getRecord(userId, recordId);
+    }
+
+    @Override
+    public ListeningSectionScriptVO getListeningSectionScript(Long userId, Long recordId, Integer sectionNumber) {
+        validateUserId(userId);
+        validateRecordId(recordId);
+        if (sectionNumber == null || sectionNumber < 1) {
+            throw new IllegalArgumentException("sectionNumber must be greater than or equal to 1");
+        }
+        return userListeningService.getRecordSectionScript(recordId, userId, sectionNumber);
     }
 
     @Override
@@ -108,6 +159,26 @@ public class UserRecordServiceImpl implements UserRecordService {
                 && query.getStartTime().isAfter(query.getEndTime())) {
             throw new IllegalArgumentException("startTime cannot be later than endTime");
         }
+    }
+
+    private void validateListQuery(UserRecordListQuery query) {
+        if (query.getPageNum() == null || query.getPageNum() < 1) {
+            throw new IllegalArgumentException("pageNum must be greater than or equal to 1");
+        }
+        if (query.getPageSize() == null || query.getPageSize() < 1) {
+            throw new IllegalArgumentException("pageSize must be greater than or equal to 1");
+        }
+        UserRecordStateConstants.normalize(query.getRecordState());
+        normalizeOptionalModule(query.getModule());
+        UserRecordListStatusConstants.normalize(query.getStatus());
+        UserRecordListSortConstants.normalize(query.getSort());
+    }
+
+    private String normalizeOptionalModule(String module) {
+        if (module == null || module.isBlank()) {
+            return null;
+        }
+        return UserRecordModuleConstants.normalize(module);
     }
 
     private void validateUserId(Long userId) {

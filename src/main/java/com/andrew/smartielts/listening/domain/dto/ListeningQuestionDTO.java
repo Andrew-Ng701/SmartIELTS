@@ -8,6 +8,7 @@ import java.util.List;
 @Data
 public class ListeningQuestionDTO {
 
+    private Long id;
     private Long testId;
     private Long partGroupId;
 
@@ -27,4 +28,5 @@ public class ListeningQuestionDTO {
     private Integer displayOrder;
     private Integer score;
     private List<BizImageResourceDTO> groupImages;
+    private List<BizImageResourceDTO> images;
 }

@@ -3,13 +3,16 @@ package com.andrew.smartielts.user.service.admin.impl;
 import com.andrew.smartielts.auth.domain.pojo.User;
 import com.andrew.smartielts.common.page.PageResult;
 import com.andrew.smartielts.common.page.SortDirectionEnum;
+import com.andrew.smartielts.record.domain.query.admin.AdminUserScopedRecordListQuery;
+import com.andrew.smartielts.record.domain.vo.UserRecordDetailVO;
+import com.andrew.smartielts.record.domain.vo.admin.AdminUserRecordListItemVO;
 import com.andrew.smartielts.record.service.UserRecordService;
+import com.andrew.smartielts.record.service.admin.AdminUserRecordService;
 import com.andrew.smartielts.user.domain.query.admin.AdminDeletedUserPageQuery;
 import com.andrew.smartielts.user.domain.query.admin.AdminUserPageQuery;
 import com.andrew.smartielts.user.domain.vo.AdminUserListVO;
 import com.andrew.smartielts.user.domain.vo.UserAdminDetailVO;
 import com.andrew.smartielts.user.domain.vo.UserAdminVO;
-import com.andrew.smartielts.user.domain.vo.UserRecordCountVO;
 import com.andrew.smartielts.user.mapper.UserMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -17,10 +20,12 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -36,9 +41,12 @@ class AdminUserServiceImplTest {
     @Mock
     private UserRecordService userRecordService;
 
+    @Mock
+    private AdminUserRecordService adminUserRecordService;
+
     @Test
     void pageActiveUsers_whenQueryNull_shouldUseDefaults() {
-        AdminUserServiceImpl service = new AdminUserServiceImpl(userMapper, userRecordService);
+        AdminUserServiceImpl service = new AdminUserServiceImpl(userMapper, userRecordService, adminUserRecordService);
         when(userMapper.countActive(any(AdminUserPageQuery.class))).thenReturn(0L);
         when(userMapper.pageActive(any(AdminUserPageQuery.class), eq(0), eq(10))).thenReturn(List.of());
 
@@ -57,7 +65,7 @@ class AdminUserServiceImplTest {
 
     @Test
     void pageDeletedUsers_shouldNormalizeFiltersAndClampPageSize() {
-        AdminUserServiceImpl service = new AdminUserServiceImpl(userMapper, userRecordService);
+        AdminUserServiceImpl service = new AdminUserServiceImpl(userMapper, userRecordService, adminUserRecordService);
         AdminDeletedUserPageQuery query = new AdminDeletedUserPageQuery();
         query.setPageNum(2);
         query.setPageSize(300);
@@ -93,52 +101,53 @@ class AdminUserServiceImplTest {
     }
 
     @Test
-    void getUserDetail_shouldReturnProfilePictureFields() {
-        AdminUserServiceImpl service = new AdminUserServiceImpl(userMapper, userRecordService);
-        when(userMapper.findAnyById(9L)).thenReturn(user(9L, "u@example.com", "USER", 0,
+    void getUserDetail_shouldReturnProfilePictureAndTargetScoreFields() {
+        AdminUserServiceImpl service = new AdminUserServiceImpl(userMapper, userRecordService, adminUserRecordService);
+        User user = user(9L, "u@example.com", "USER", 0,
                 "https://oss.test/avatar.png",
-                "user-profile-picture/9/avatar.png"));
+                "user-profile-picture/9/avatar.png");
+        user.setIeltsTargetScores("7,6.5,,8");
+        when(userMapper.findAnyById(9L)).thenReturn(user);
 
         UserAdminDetailVO result = service.getUserDetail(9L);
 
         assertEquals("https://oss.test/avatar.png", result.getProfilePictureUrl());
         assertEquals("user-profile-picture/9/avatar.png", result.getProfilePictureObjectKey());
+        assertEquals(new BigDecimal("7"), result.getListeningTargetScore());
+        assertEquals(new BigDecimal("6.5"), result.getReadingTargetScore());
+        assertNull(result.getWritingTargetScore());
+        assertEquals(new BigDecimal("8"), result.getSpeakingTargetScore());
     }
 
     @Test
-    void listUsers_shouldReturnCountsAndRecordCounts() {
-        AdminUserServiceImpl service = new AdminUserServiceImpl(userMapper, userRecordService);
+    void listUsers_shouldReturnCountsAndTargetScoresWithoutRecordRows() {
+        AdminUserServiceImpl service = new AdminUserServiceImpl(userMapper, userRecordService, adminUserRecordService);
+        User user = user(9L, "u@example.com", "USER", 0);
+        user.setIeltsTargetScores("7,6.5,,8");
+        user.setConsecutiveLoginDays(6);
         when(userMapper.countActive(any(AdminUserPageQuery.class))).thenReturn(1L);
         when(userMapper.pageActive(any(AdminUserPageQuery.class), eq(0), eq(10)))
-                .thenReturn(List.of(user(9L, "u@example.com", "USER", 0)));
+                .thenReturn(List.of(user));
         when(userMapper.countAllUsers()).thenReturn(3L);
         when(userMapper.countActiveUsers()).thenReturn(2L);
         when(userMapper.countDeletedUsers()).thenReturn(1L);
-
-        UserRecordCountVO count = new UserRecordCountVO();
-        count.setUserId(9L);
-        count.setModuleType("LISTENING");
-        count.setPaperId(1L);
-        count.setPaperTitle("Listening Test 1");
-        count.setActiveRecordCount(2L);
-        count.setDeletedRecordCount(1L);
-        count.setTotalRecordCount(3L);
-        when(userMapper.selectRecordCountsByUserIds(List.of(9L))).thenReturn(List.of(count));
 
         AdminUserListVO result = service.listUsers(null);
 
         assertEquals(3L, result.getTotalUsers());
         assertEquals(2L, result.getActiveUsers());
         assertEquals(1L, result.getDeletedUsers());
-        UserAdminVO user = result.getUsers().getList().get(0);
-        assertEquals(2L, user.getTotalActiveRecordCount());
-        assertEquals(1L, user.getTotalDeletedRecordCount());
-        assertEquals(1, user.getRecordCounts().size());
+        UserAdminVO listedUser = result.getUsers().getList().get(0);
+        assertEquals(6, listedUser.getConsecutiveLoginDays());
+        assertEquals(new BigDecimal("7"), listedUser.getListeningTargetScore());
+        assertEquals(new BigDecimal("6.5"), listedUser.getReadingTargetScore());
+        assertNull(listedUser.getWritingTargetScore());
+        assertEquals(new BigDecimal("8"), listedUser.getSpeakingTargetScore());
     }
 
     @Test
     void pageActiveUsers_whenSortFieldInvalid_shouldUseDefault() {
-        AdminUserServiceImpl service = new AdminUserServiceImpl(userMapper, userRecordService);
+        AdminUserServiceImpl service = new AdminUserServiceImpl(userMapper, userRecordService, adminUserRecordService);
         AdminUserPageQuery query = new AdminUserPageQuery();
         query.setSortField("unsafe_sql");
         when(userMapper.countActive(any(AdminUserPageQuery.class))).thenReturn(0L);
@@ -153,7 +162,7 @@ class AdminUserServiceImplTest {
 
     @Test
     void deleteUser_whenActive_shouldSoftDelete() {
-        AdminUserServiceImpl service = new AdminUserServiceImpl(userMapper, userRecordService);
+        AdminUserServiceImpl service = new AdminUserServiceImpl(userMapper, userRecordService, adminUserRecordService);
         when(userMapper.findActiveById(9L)).thenReturn(user(9L, "u@example.com", "USER", 0));
 
         service.deleteUser(9L);
@@ -163,7 +172,7 @@ class AdminUserServiceImplTest {
 
     @Test
     void restoreUser_whenDeleted_shouldRestore() {
-        AdminUserServiceImpl service = new AdminUserServiceImpl(userMapper, userRecordService);
+        AdminUserServiceImpl service = new AdminUserServiceImpl(userMapper, userRecordService, adminUserRecordService);
         when(userMapper.findAnyById(9L)).thenReturn(user(9L, "u@example.com", "USER", 1));
 
         service.restoreUser(9L);
@@ -173,12 +182,78 @@ class AdminUserServiceImplTest {
 
     @Test
     void restoreUser_whenActive_shouldThrow() {
-        AdminUserServiceImpl service = new AdminUserServiceImpl(userMapper, userRecordService);
+        AdminUserServiceImpl service = new AdminUserServiceImpl(userMapper, userRecordService, adminUserRecordService);
         when(userMapper.findAnyById(9L)).thenReturn(user(9L, "u@example.com", "USER", 0));
 
         RuntimeException ex = assertThrows(RuntimeException.class, () -> service.restoreUser(9L));
 
         assertEquals("User is not deleted", ex.getMessage());
+    }
+
+    @Test
+    void getUserRecordDetail_whenUserMissing_shouldThrow() {
+        AdminUserServiceImpl service = new AdminUserServiceImpl(userMapper, userRecordService, adminUserRecordService);
+        when(userMapper.findAnyById(9L)).thenReturn(null);
+
+        RuntimeException ex = assertThrows(RuntimeException.class,
+                () -> service.getUserRecordDetail(9L, "READING", 100L));
+
+        assertEquals("User not found", ex.getMessage());
+    }
+
+    @Test
+    void getUserRecordDetail_whenUserExists_shouldDelegateWithOwnerUserId() {
+        AdminUserServiceImpl service = new AdminUserServiceImpl(userMapper, userRecordService, adminUserRecordService);
+        User user = user(9L, "u@example.com", "USER", 0);
+        UserRecordDetailVO detail = new UserRecordDetailVO();
+        detail.setModuleType("READING");
+        detail.setRecordId(100L);
+        when(userMapper.findAnyById(9L)).thenReturn(user);
+        when(userRecordService.getRecord(9L, "READING", 100L)).thenReturn(detail);
+
+        UserRecordDetailVO result = service.getUserRecordDetail(9L, "READING", 100L);
+
+        assertEquals(detail, result);
+        verify(userRecordService).getRecord(9L, "READING", 100L);
+    }
+
+    @Test
+    void getUserRecordDetail_whenRecordBelongsToAnotherUser_shouldSurfaceOwnershipError() {
+        AdminUserServiceImpl service = new AdminUserServiceImpl(userMapper, userRecordService, adminUserRecordService);
+        when(userMapper.findAnyById(9L)).thenReturn(user(9L, "u@example.com", "USER", 0));
+        when(userRecordService.getRecord(9L, "READING", 100L))
+                .thenThrow(new RuntimeException("Reading record not found"));
+
+        RuntimeException ex = assertThrows(RuntimeException.class,
+                () -> service.getUserRecordDetail(9L, "READING", 100L));
+
+        assertEquals("Reading record not found", ex.getMessage());
+    }
+
+    @Test
+    void listUserRecords_whenUserExists_shouldDelegateWithPathUserId() {
+        AdminUserServiceImpl service = new AdminUserServiceImpl(userMapper, userRecordService, adminUserRecordService);
+        AdminUserScopedRecordListQuery query = new AdminUserScopedRecordListQuery();
+        query.setModule("READING");
+        PageResult<AdminUserRecordListItemVO> page = new PageResult<>(List.of(), 0L, 1, 20);
+        when(userMapper.findAnyById(9L)).thenReturn(user(9L, "u@example.com", "USER", 0));
+        when(adminUserRecordService.listRecordsForUser(9L, query)).thenReturn(page);
+
+        PageResult<AdminUserRecordListItemVO> result = service.listUserRecords(9L, query);
+
+        assertEquals(page, result);
+        verify(adminUserRecordService).listRecordsForUser(9L, query);
+    }
+
+    @Test
+    void listUserRecords_whenUserMissing_shouldThrow() {
+        AdminUserServiceImpl service = new AdminUserServiceImpl(userMapper, userRecordService, adminUserRecordService);
+        when(userMapper.findAnyById(9L)).thenReturn(null);
+
+        RuntimeException ex = assertThrows(RuntimeException.class,
+                () -> service.listUserRecords(9L, new AdminUserScopedRecordListQuery()));
+
+        assertEquals("User not found", ex.getMessage());
     }
 
     private User user(Long id, String email, String role, Integer isDeleted) {
@@ -198,3 +273,6 @@ class AdminUserServiceImplTest {
         return user;
     }
 }
+
+
+

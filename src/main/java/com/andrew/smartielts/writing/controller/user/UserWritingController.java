@@ -1,14 +1,10 @@
 package com.andrew.smartielts.writing.controller.user;
 
 import com.andrew.smartielts.common.resultDTO.Result;
-import com.andrew.smartielts.utils.SecurityUtils;
-import com.andrew.smartielts.writing.domain.query.user.UserWritingDeletedRecordPageQuery;
-import com.andrew.smartielts.writing.domain.query.user.UserWritingRecordPageQuery;
 import com.andrew.smartielts.writing.service.user.UserWritingService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.validation.Valid;
 import org.springframework.http.MediaType;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -31,14 +27,8 @@ public class UserWritingController {
 
     @Operation(summary = "List all writing questions")
     @GetMapping("/questions")
-    public Result<?> listQuestions() {
-        return Result.success(userWritingService.listAllWritingPaper());
-    }
-
-    @Operation(summary = "Get writing question detail")
-    @GetMapping("/questions/{questionId}")
-    public Result<?> getQuestion(@PathVariable Long questionId) {
-        return Result.success(userWritingService.getQuestion(questionId));
+    public Result<?> listQuestions(@RequestParam(value = "taskType", required = false) String taskType) {
+        return Result.success(userWritingService.listAllWritingPaper(taskType));
     }
 
     @Operation(summary = "Submit writing")
@@ -57,47 +47,4 @@ public class UserWritingController {
         );
     }
 
-    @Operation(summary = "List my writing records")
-    @GetMapping("/records")
-    public Result<?> listMyRecords() {
-        Long userId = SecurityUtils.getCurrentUserId();
-        return Result.success(userWritingService.listMyRecords(userId));
-    }
-
-    @Operation(summary = "Get writing record detail")
-    @GetMapping("/records/{recordId}")
-    public Result<?> getRecord(@PathVariable Long recordId) {
-        Long userId = SecurityUtils.getCurrentUserId();
-        return Result.success(userWritingService.getRecord(recordId, userId));
-    }
-
-    @Operation(summary = "Delete my writing record")
-    @DeleteMapping("/records/{recordId}")
-    public Result<?> deleteRecord(@PathVariable Long recordId) {
-        Long userId = SecurityUtils.getCurrentUserId();
-        userWritingService.deleteRecord(recordId, userId);
-        return Result.success();
-    }
-
-    @Operation(summary = "Restore my writing record")
-    @PutMapping("/records/{recordId}/restore")
-    public Result<?> restoreRecord(@PathVariable Long recordId) {
-        Long userId = SecurityUtils.getCurrentUserId();
-        userWritingService.restoreRecord(recordId, userId);
-        return Result.success();
-    }
-
-    @Operation(summary = "User writing active records overview")
-    @PostMapping("/records/overview")
-    public Result<?> pageActiveRecords(@Valid @RequestBody UserWritingRecordPageQuery query) {
-        Long userId = SecurityUtils.getCurrentUserId();
-        return Result.success(userWritingService.pageActiveRecords(userId, query));
-    }
-
-    @Operation(summary = "User writing deleted records overview")
-    @PostMapping("/records/deleted/overview")
-    public Result<?> pageDeletedRecords(@Valid @RequestBody UserWritingDeletedRecordPageQuery query) {
-        Long userId = SecurityUtils.getCurrentUserId();
-        return Result.success(userWritingService.pageDeletedRecords(userId, query));
-    }
 }

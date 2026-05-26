@@ -13,17 +13,13 @@ import java.util.List;
 
 public interface UserWritingService {
 
-    List<WritingQuestionVO> listAllWritingPaper();
-
-    WritingQuestionVO getQuestion(Long questionId);
+    List<WritingQuestionVO> listAllWritingPaper(String taskType);
 
     WritingRecordDetailVO submitRecord(Long questionId,
                                        BigDecimal targetScore,
                                        String textContent,
                                        MultipartFile[] images,
                                        MultipartFile pdf);
-
-    List<WritingRecordVO> listMyRecords(Long userId);
 
     WritingRecordDetailVO getRecord(Long recordId, Long userId);
 

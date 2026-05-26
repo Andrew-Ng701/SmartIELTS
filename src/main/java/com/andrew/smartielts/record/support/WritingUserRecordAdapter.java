@@ -21,9 +21,12 @@ import java.util.List;
 public class WritingUserRecordAdapter implements UserRecordAdapter {
 
     private final UserWritingService userWritingService;
+    private final RecordReviewBuilder recordReviewBuilder;
 
-    public WritingUserRecordAdapter(UserWritingService userWritingService) {
+    public WritingUserRecordAdapter(UserWritingService userWritingService,
+                                    RecordReviewBuilder recordReviewBuilder) {
         this.userWritingService = userWritingService;
+        this.recordReviewBuilder = recordReviewBuilder;
     }
 
     @Override
@@ -53,6 +56,7 @@ public class WritingUserRecordAdapter implements UserRecordAdapter {
         vo.setRecordId(recordId);
         vo.setDetailType(UserRecordDetailTypeConstants.WRITING_RECORD_DETAIL);
         vo.setDetail(detail);
+        vo.setReview(recordReviewBuilder.buildWriting(userId, detail));
         return vo;
     }
 

@@ -333,83 +333,10 @@
         <include refid="AdminActiveWhere"/>
     </select>
 
-    <select id="pageAdminActive" resultType="com.andrew.smartielts.speaking.domain.vo.SpeakingRecordVO">
-        SELECT
-        sr.id,
-        sr.user_id,
-        sr.session_id,
-        sr.question_id,
-        sr.audio_url,
-        sr.transcript,
-        sr.fluency_and_coherence,
-        sr.lexical_resource,
-        sr.grammatical_range_and_accuracy,
-        sr.pronunciation,
-        sr.overall_score,
-        sr.feedback,
-        sr.answer_status,
-        sr.is_deleted,
-        sr.deleted_time,
-        sr.ai_status,
-        sr.ai_provider,
-        sr.ai_model,
-        sr.ai_error_message,
-        sr.relevance_comment,
-        sr.quality_comment,
-        sr.created_time,
-        sr.updated_time,
-        sq.part
-        FROM speaking_record sr
-        LEFT JOIN speaking_question sq ON sr.question_id = sq.id
-        <include refid="AdminActiveWhere"/>
-        ORDER BY sr.created_time
-        <choose>
-            <when test="query != null and query.sortDirection != null and query.sortDirection.name() == 'ASC'">ASC</when>
-            <otherwise>DESC</otherwise>
-        </choose>
-        LIMIT #{offset}, #{limit}
-    </select>
-
     <select id="countAdminDeleted" resultType="java.lang.Long">
         SELECT COUNT(*)
         FROM speaking_record sr
         <include refid="AdminDeletedWhere"/>
-    </select>
-
-    <select id="pageAdminDeleted" resultType="com.andrew.smartielts.speaking.domain.vo.SpeakingRecordVO">
-        SELECT
-        sr.id,
-        sr.user_id,
-        sr.session_id,
-        sr.question_id,
-        sr.audio_url,
-        sr.transcript,
-        sr.fluency_and_coherence,
-        sr.lexical_resource,
-        sr.grammatical_range_and_accuracy,
-        sr.pronunciation,
-        sr.overall_score,
-        sr.feedback,
-        sr.answer_status,
-        sr.is_deleted,
-        sr.deleted_time,
-        sr.ai_status,
-        sr.ai_provider,
-        sr.ai_model,
-        sr.ai_error_message,
-        sr.relevance_comment,
-        sr.quality_comment,
-        sr.created_time,
-        sr.updated_time
-        FROM speaking_record sr
-        <include refid="AdminDeletedWhere"/>
-        ORDER BY sr.deleted_time
-        <choose>
-            <when test="query != null and query.sortDirection != null and query.sortDirection.name() == 'ASC'">ASC</when>
-            <otherwise>DESC</otherwise>
-        </choose>
-        , sr.created_time DESC
-        LIMIT #{offset}, #{limit}
     </select>
 
     <select id="findRecentAiFailures" resultMap="speakingRecordResultMap">
@@ -520,6 +447,8 @@
         FROM speaking_record
         WHERE user_id = #{userId}
           AND is_deleted = 0
+          AND answer_status = 'SCORED'
+          AND ai_status IN ('SCORED', 'SUCCESS')
           AND overall_score IS NOT NULL
     </select>
 

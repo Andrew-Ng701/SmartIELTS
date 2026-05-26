@@ -11,6 +11,7 @@ import com.andrew.smartielts.speaking.domain.model.ExamStep;
 import com.andrew.smartielts.speaking.domain.pojo.SpeakingQuestion;
 import com.andrew.smartielts.speaking.domain.pojo.SpeakingRecord;
 import com.andrew.smartielts.speaking.domain.pojo.SpeakingSession;
+import com.andrew.smartielts.speaking.domain.vo.SpeakingRecordDetailVO;
 import com.andrew.smartielts.speaking.domain.vo.SubmitAnswerVO;
 import com.andrew.smartielts.speaking.domain.vo.UploadSpeakingAudioVO;
 import com.andrew.smartielts.speaking.mapper.SpeakingMapper;
@@ -222,6 +223,27 @@ class UserSpeakingServiceImplTest {
 
         assertEquals("Not all questions are scored yet", ex.getMessage());
         verify(speakingSessionMapper, never()).updateSpeakingSession(any());
+    }
+
+    @Test
+    void getRecord_shouldIncludeRecordsFromSameSession() {
+        r1.setUserId(100L);
+        r2.setUserId(100L);
+        r1.setAudioUrl("https://oss.test/speaking/11.mp3");
+        r2.setAudioUrl("https://oss.test/speaking/12.mp3");
+        when(speakingRecordMapper.findAnyByIdForUser(11L, 100L)).thenReturn(r1);
+        when(speakingRecordMapper.findBySessionId("sess-000001")).thenReturn(List.of(r1, r2));
+        when(speakingMapper.findAnyById(101L)).thenReturn(q1);
+        when(speakingMapper.findAnyById(102L)).thenReturn(q2);
+
+        SpeakingRecordDetailVO result = userSpeakingService.getRecord(11L, 100L);
+
+        assertEquals(11L, result.getRecordId());
+        assertEquals("sess-000001", result.getSessionId());
+        assertEquals(2, result.getSessionRecords().size());
+        assertEquals(11L, result.getSessionRecords().get(0).getId());
+        assertEquals("https://oss.test/speaking/12.mp3", result.getSessionRecords().get(1).getAudioUrl());
+        assertEquals("How does technology affect communication?", result.getSessionRecords().get(1).getQuestionText());
     }
 
     @Test

@@ -7,13 +7,15 @@ import java.util.List;
 
 public interface ListeningAudioService {
 
-    ListeningAudio createTestAudioFromUpload(Long testId, String title, MultipartFile file);
+    ListeningAudio createTestAudioFromUpload(Long testId, String title, String transcriptText, MultipartFile file);
 
-    ListeningAudio updateTestAudioFromUpload(Long audioId, Long testId, String title, MultipartFile file);
+    ListeningAudio updateTestAudioFromUpload(Long audioId, Long testId, String title, String transcriptText, MultipartFile file);
 
-    ListeningAudio createPartGroupAudioFromUpload(Long testId, Long partGroupId, String title, MultipartFile file);
+    ListeningAudio createPartGroupAudioFromUpload(Long testId, Long partGroupId, String title, String transcriptText, MultipartFile file);
 
-    ListeningAudio updatePartGroupAudioFromUpload(Long audioId, Long testId, Long partGroupId, String title, MultipartFile file);
+    ListeningAudio updatePartGroupAudioFromUpload(Long audioId, Long testId, Long partGroupId, String title, String transcriptText, MultipartFile file);
+
+    ListeningAudio updateAudioMetadata(Long audioId, String title, String transcriptText);
 
     ListeningAudio getById(Long id);
 

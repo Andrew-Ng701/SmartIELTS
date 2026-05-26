@@ -58,7 +58,7 @@ public class LoginServiceImpl implements LoginService {
         }
 
         Long tokenVersion = user.getTokenVersion() == null ? 0L : user.getTokenVersion();
-        authMapper.updateLastLoginTimeById(user.getId());
+        authMapper.updateLoginStatsById(user.getId());
 
         return createAuthResponse(user.getId(), user.getRole(), tokenVersion);
     }

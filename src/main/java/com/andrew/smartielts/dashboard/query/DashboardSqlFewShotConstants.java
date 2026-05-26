@@ -104,7 +104,7 @@ public final class DashboardSqlFewShotConstants {
             goodJson:
             {
               "success": true,
-              "sql": "SELECT 'writing' AS module, wr.id AS record_id, wr.question_id AS question_id, wq.task_type AS task_type, wq.title AS question_title, wq.description AS question_text, wq.image_url AS image_url, wq.image_object_key AS image_object_key, wr.input_type AS input_type, wr.text_content AS text_content, wr.extracted_text AS extracted_text, wr.target_score AS target_score, wr.ai_score AS ai_score, wr.ai_feedback AS ai_feedback, wr.ai_status AS ai_status, wr.ai_provider AS ai_provider, wr.ai_model AS ai_model, wr.created_time AS created_time, wra.id AS attachment_id, wra.file_type AS attachment_file_type, wra.file_url AS attachment_file_url, wra.file_key AS attachment_file_key, wra.sort_order AS attachment_sort_order, wra.ocr_text AS attachment_ocr_text FROM writing_record wr INNER JOIN writing_question wq ON wq.id = wr.question_id LEFT JOIN writing_record_attachment wra ON wra.record_id = wr.id WHERE wr.user_id = :target_user_id AND wr.is_deleted = 0 ORDER BY wr.created_time DESC, wra.sort_order ASC LIMIT :limit",
+              "sql": "SELECT 'writing' AS module, wr.id AS record_id, wr.question_id AS question_id, wq.task_type AS task_type, wq.title AS question_title, wq.description AS question_text, wq.image_detail_description AS image_detail_description, wr.input_type AS input_type, wr.text_content AS text_content, wr.extracted_text AS extracted_text, wr.target_score AS target_score, wr.ai_score AS ai_score, wr.ai_feedback AS ai_feedback, wr.ai_status AS ai_status, wr.ai_provider AS ai_provider, wr.ai_model AS ai_model, wr.created_time AS created_time, wra.id AS attachment_id, wra.file_type AS attachment_file_type, wra.file_url AS attachment_file_url, wra.file_key AS attachment_file_key, wra.sort_order AS attachment_sort_order, wra.ocr_text AS attachment_ocr_text FROM writing_record wr INNER JOIN writing_question wq ON wq.id = wr.question_id LEFT JOIN writing_record_attachment wra ON wra.record_id = wr.id WHERE wr.user_id = :target_user_id AND wr.is_deleted = 0 ORDER BY wr.created_time DESC, wra.sort_order ASC LIMIT :limit",
               "params": {
                 "target_user_id": 2001,
                 "limit": 1
@@ -116,8 +116,7 @@ public final class DashboardSqlFewShotConstants {
                 "task_type",
                 "question_title",
                 "question_text",
-                "image_url",
-                "image_object_key",
+                "image_detail_description",
                 "input_type",
                 "text_content",
                 "extracted_text",

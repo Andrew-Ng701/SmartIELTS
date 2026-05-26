@@ -11,9 +11,11 @@ public final class ReadingQuestionConstants {
 
     public static final String QUESTION_TYPE_MULTIPLE_CHOICE_SINGLE = "MULTIPLE_CHOICE_SINGLE";
     public static final String QUESTION_TYPE_MULTIPLE_CHOICE_MULTI = "MULTIPLE_CHOICE_MULTI";
+    public static final String QUESTION_TYPE_MULTIPLE_CHOICE = "MULTIPLE_CHOICE";
     public static final String QUESTION_TYPE_TRUE_FALSE_NOT_GIVEN = "TRUE_FALSE_NOT_GIVEN";
     public static final String QUESTION_TYPE_YES_NO_NOT_GIVEN = "YES_NO_NOT_GIVEN";
     public static final String QUESTION_TYPE_MATCHING = "MATCHING";
+    @Deprecated
     public static final String QUESTION_TYPE_HEADING_MATCHING = "HEADING_MATCHING";
     public static final String QUESTION_TYPE_SUMMARY_COMPLETION = "SUMMARY_COMPLETION";
     public static final String QUESTION_TYPE_SENTENCE_COMPLETION = "SENTENCE_COMPLETION";
@@ -21,6 +23,8 @@ public final class ReadingQuestionConstants {
     public static final String QUESTION_TYPE_TABLE_COMPLETION = "TABLE_COMPLETION";
     public static final String QUESTION_TYPE_FLOW_CHART_COMPLETION = "FLOW_CHART_COMPLETION";
     public static final String QUESTION_TYPE_DIAGRAM_LABEL_COMPLETION = "DIAGRAM_LABEL_COMPLETION";
+    public static final String QUESTION_TYPE_FORM_COMPLETION = "FORM_COMPLETION";
+    public static final String QUESTION_TYPE_NOTE_COMPLETION = "NOTE_COMPLETION";
 
     public static boolean is_multi_answer_mode(String answer_mode) {
         return ANSWER_MODE_MULTI.equalsIgnoreCase(trim_to_null(answer_mode));
@@ -51,12 +55,18 @@ public final class ReadingQuestionConstants {
             return ANSWER_MODE_TEXT;
         }
         if ("RADIO".equals(normalized_answer_mode)
-                || "ONE".equals(normalized_answer_mode)) {
+                || "ONE".equals(normalized_answer_mode)
+                || "SINGLE_ANSWER".equals(normalized_answer_mode)
+                || "SINGLE_MODE".equals(normalized_answer_mode)) {
             return ANSWER_MODE_SINGLE;
         }
         if ("MULTIPLE".equals(normalized_answer_mode)
                 || "CHECKBOX".equals(normalized_answer_mode)
-                || "MANY".equals(normalized_answer_mode)) {
+                || "MANY".equals(normalized_answer_mode)
+                || "MULTIPLE_ANSWER".equals(normalized_answer_mode)
+                || "MULTIPLE_ANSWERS".equals(normalized_answer_mode)
+                || "MULTI_ANSWER".equals(normalized_answer_mode)
+                || "MULTI_ANSWERS".equals(normalized_answer_mode)) {
             return ANSWER_MODE_MULTI;
         }
         if (ANSWER_MODE_MULTI.equals(normalized_answer_mode)) {
@@ -80,6 +90,10 @@ public final class ReadingQuestionConstants {
                 .replace(' ', '_')
                 .toUpperCase();
 
+        if (QUESTION_TYPE_HEADING_MATCHING.equals(normalized_question_type)
+                || "MATCHING_HEADINGS".equals(normalized_question_type)) {
+            return QUESTION_TYPE_MATCHING;
+        }
         return normalized_question_type;
     }
 

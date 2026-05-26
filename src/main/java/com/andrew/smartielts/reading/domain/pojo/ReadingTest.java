@@ -16,9 +16,14 @@ public class ReadingTest {
     private Integer isDeleted;
 
     private String timerMode;
+    private Integer prepSeconds;
     private Integer totalSeconds;
+    private Integer prepMinutes;
+    private Integer totalMinutes;
     private Integer autoSubmit;
     private Integer allowPause;
+    private Integer tasks;
+    private Integer questions;
 
     private List<TestPartGroup> partGroups;
 }

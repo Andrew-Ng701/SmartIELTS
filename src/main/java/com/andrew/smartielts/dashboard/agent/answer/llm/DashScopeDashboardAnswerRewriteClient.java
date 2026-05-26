@@ -82,6 +82,7 @@ public class DashScopeDashboardAnswerRewriteClient implements DashboardAnswerRew
                 originalQuery: %s
                 capability: %s
                 filtersJson: %s
+                userTargetScoresJson: %s
                 factualSummary: %s
                 dataJson: %s
                 suggestionsJson: %s
@@ -93,6 +94,7 @@ public class DashScopeDashboardAnswerRewriteClient implements DashboardAnswerRew
                     safeString(request.getOriginalQuery()),
                     safeString(request.getCapability()),
                     objectMapper.writeValueAsString(request.getFilters() == null ? Map.of() : request.getFilters()),
+                    objectMapper.writeValueAsString(request.getUserTargetScores() == null ? Map.of() : request.getUserTargetScores()),
                     safeString(request.getFactualSummary()),
                     objectMapper.writeValueAsString(request.getData()),
                     objectMapper.writeValueAsString(request.getSuggestions() == null ? List.of() : request.getSuggestions())

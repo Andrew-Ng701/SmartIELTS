@@ -4,8 +4,10 @@ import com.andrew.smartielts.speaking.did.DidProperties;
 import com.andrew.smartielts.speaking.did.dto.DidCreateTalkResponseDTO;
 import com.andrew.smartielts.speaking.did.service.DidSpeakingService;
 import com.andrew.smartielts.speaking.domain.vo.SpeakingTalkStatusVO;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.RestTemplate;
 
 import java.nio.charset.StandardCharsets;
@@ -14,6 +16,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 @Service
+@Slf4j
 public class DidSpeakingServiceImpl implements DidSpeakingService {
 
     private final DidProperties didProperties;
@@ -48,12 +51,21 @@ public class DidSpeakingServiceImpl implements DidSpeakingService {
         body.put("script", script);
         body.put("config", config);
 
-        ResponseEntity<DidCreateTalkResponseDTO> response = restTemplate.exchange(
-                url,
-                HttpMethod.POST,
-                new HttpEntity<>(body, headers),
-                DidCreateTalkResponseDTO.class
-        );
+        ResponseEntity<DidCreateTalkResponseDTO> response;
+        try {
+            response = restTemplate.exchange(
+                    url,
+                    HttpMethod.POST,
+                    new HttpEntity<>(body, headers),
+                    DidCreateTalkResponseDTO.class
+            );
+        } catch (HttpStatusCodeException e) {
+            log.error("D-ID create talk failed, status={}, body={}",
+                    e.getStatusCode(),
+                    abbreviate(e.getResponseBodyAsString(), 500),
+                    e);
+            throw new RuntimeException("Failed to create D-ID talk", e);
+        }
 
         if (response.getBody() == null || response.getBody().getId() == null) {
             throw new RuntimeException("Failed to create D-ID talk");
@@ -126,5 +138,15 @@ public class DidSpeakingServiceImpl implements DidSpeakingService {
             return first;
         }
         return second;
+    }
+
+    private String abbreviate(String value, int maxLength) {
+        if (value == null) {
+            return null;
+        }
+        if (value.length() <= maxLength) {
+            return value;
+        }
+        return value.substring(0, maxLength) + "...";
     }
 }

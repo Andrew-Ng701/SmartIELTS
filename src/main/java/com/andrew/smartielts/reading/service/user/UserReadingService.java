@@ -16,8 +16,6 @@ public interface UserReadingService {
 
     List<ReadingTestDetailVO> listTests();
 
-    ReadingTestDetailVO getTestDetail(Long testId);
-
     ReadingSessionVO start(Long testId);
 
     ReadingSessionVO getSession(String sessionId, Long userId);

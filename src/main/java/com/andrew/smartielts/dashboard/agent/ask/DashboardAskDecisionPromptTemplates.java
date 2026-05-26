@@ -16,6 +16,7 @@ ASK_SCENE: %s
 RESPONSE_MODE: %s
 QUERY: %s
 
+CONVERSATION_HISTORY_JSON: %s
 OBJECT_REF_JSON: %s
 PRELOADED_PAYLOAD_JSON: %s
 CLIENT_CONTEXT_JSON: %s
@@ -30,6 +31,7 @@ Important interpretation rules:
 4. Treat LEARNING_CONTEXT_JSON and QUESTION_CONTEXT_JSON as verified backend context.
 5. If ASK_SCENE is question/article/record related, prioritize QUESTION_CONTEXT_JSON over generic summary payloads.
 6. If exact item-level content is missing, do not pretend it exists.
-7. Return JSON only.
+7. CONVERSATION_HISTORY_JSON contains previous user/assistant turns from the same frontend conversation. Use it to resolve follow-up wording such as "that one", "continue", or "what about my last answer", but do not override verified backend context.
+8. Return JSON only.
 """;
 }

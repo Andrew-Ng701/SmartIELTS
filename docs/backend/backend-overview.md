@@ -1,23 +1,23 @@
 # SmartIELTS Backend Overview
 
-Last Updated: 2026-05-11
+Last Updated: 2026-05-15
 
-Source Verified: `pom.xml`, `application.yml`, `src/main/java/com/andrew/smartielts`, `src/main/resources/mapper`, current tests.
+Source Verified: `pom.xml`, `application.yml`, `src/main/java/com/andrew/smartielts`, `src/main/resources/mapper`, `scripts/sql`, current tests.
 
-## 目的
+## �ت�
 
-這份文件是後端結構速查，供開發者與 AI assistant 在修改前快速理解目前 module、API boundary、資料流、權限規則與高風險區域。API 細節以 `docs/api/api-contract.md` 為準。
+�o����󴣨ѫ�ݵ��c�`���A������}�o�P AI agent ��ֳt�w�� module�Bservice boundary�B��ƪ�P API contract�CAPI �Ӹ`�H `docs/api/api-contract.md` ���ǡF��Ʈw���c�H `docs/database-overview.md` �ɥR�C
 
-## 技術棧
+## �޳N��
 
 - Spring Boot `3.3.5`
 - Java `17`
 - Spring Security stateless JWT
 - MyBatis XML mapper with MySQL
 - Knife4j / OpenAPI 3
-- Redis for dashboard/cache/context support
+- Redis for dashboard/preload cache
 - Aliyun OSS for file storage
-- Aliyun-compatible AI services for writing/speaking/dashboard flows
+- Aliyun-compatible AI services for writing�Bspeaking�Bdashboard
 - D-ID integration for speaking talk flow
 
 Entrypoint:
@@ -36,7 +36,7 @@ Key config:
 
 - Server port default: `8080`
 - Servlet path default: `/api`
-- Controller mapping 不包含 `/api`，HTTP client 必須加上 servlet path。
+- Controller mapping ���]�t `/api`�FHTTP client �ݭn�[�W servlet path�C
 - MyBatis XML: `src/main/resources/mapper/**/*.xml`
 - MyBatis `map-underscore-to-camel-case`: `true`
 - Multipart defaults: max file size `20MB`, max request size `100MB`
@@ -58,7 +58,7 @@ Protected:
 - `/api/admin/**` requires `ROLE_ADMIN`
 - `/api/smartielts/dashboard/**` requires authentication; role and target-user scope are checked inside dashboard services.
 
-Login/register response now returns:
+Login/register/refresh response returns:
 
 - `token`
 - `tokenExpiresIn`
@@ -67,13 +67,9 @@ Login/register response now returns:
 - `userId`
 - `role`
 
-JWT claims include:
+JWT claims include `userId`, `role`, and `tokenVersion`. `JwtAuthenticationFilter` parses `Authorization: Bearer <token>`, loads active `sys_user`, and rejects the request if token `tokenVersion` differs from `sys_user.token_version`.
 
-- `userId`
-- `role`
-- `tokenVersion`
-
-`JwtAuthenticationFilter` parses `Authorization: Bearer <token>`, loads the active user, and rejects the request if token `tokenVersion` differs from `sys_user.token_version`.
+Successful login updates `sys_user.last_login_time` and backend-owned `sys_user.consecutive_login_days`. Same-day logins keep the current streak, login after yesterday increments it, and login after a gap resets it to `1`.
 
 `POST /api/auth/logout` and `PUT /api/auth/password` increment `token_version`, so old tokens become invalid immediately.
 
@@ -81,16 +77,15 @@ JWT claims include:
 
 - `Result<T>`: `code`, `msg`, `data`
 - `PageResult<T>`: `list`, `total`, `pageNum`, `pageSize`
-- Service and controller code should keep backend-owned values on the server: id, user ownership, timestamps, status transitions, scoring, generated file object keys, AI result, tokenVersion.
+- Backend-owned values stay on server: ids, ownership, timestamps, status transitions, scoring, generated file object keys, AI result, `tokenVersion`.
+- Database uses `snake_case`; Java properties use `lowerCamelCase`. Do not rename mapper aliases or public DTO/VO fields only for style.
 
 ## Module Map
-
-Top-level package responsibilities:
 
 - `auth`: register, login, refresh, password change, logout.
 - `security`: JWT filter, security config, password config, login principal model, JWT properties.
 - `user`: current user profile, profile picture, personal overview/stats, admin user management.
-- `admin`: legacy/admin console interface boundary. Current display endpoints are delegated into `console`.
+- `admin`: compatibility/admin entrypoints, generic exam and record wrappers.
 - `console`: deterministic dashboard/console display data without AI chat orchestration.
 - `record`: unified USER record API across reading, listening, writing, and speaking.
 - `reading`: reading tests, passages, part groups, questions, sessions, submissions, records.
@@ -112,6 +107,36 @@ Layer pattern:
 - `domain/vo`: response payloads.
 - `domain/pojo`: persistence objects.
 
+## Generic Admin Wrappers
+
+`admin/exam` provides generic admin test-paper endpoints:
+
+- Base path: `/api/admin/exams/{module}/tests`
+- Supported module values are handled by `AdminExamServiceImpl`.
+- Current intent is to normalize admin test management while module-specific services still own business rules.
+
+`record/controller/admin` and `record/service/admin` provide generic admin record endpoints:
+
+- Base path: `/api/admin/records`
+- `POST /api/admin/records/list` returns a cross-user, cross-module paged record list for admin management pages.
+- `AdminUserRecordListMapper` uses SQL `union all` across reading, listening, writing and speaking records so filtering and sorting are globally correct.
+- List filters support active/deleted state, optional module, optional status, optional owner `userId`, score/time/name/module/status sorting and pagination.
+- Detail/delete/restore behavior delegates to module admin services, similar to the user-facing `record` package.
+- Module-specific admin record endpoints have been retired. Admin record list/detail/delete/restore uses `/api/admin/records` and delegates to module admin services internally.
+
+Admin user control also exposes user-scoped record detail:
+
+- `POST /api/admin/users/{userId}/records`
+- `GET /api/admin/users/{userId}/records/{moduleType}/{recordId}`
+- The list endpoint verifies the admin-selected user exists, then reuses `AdminUserRecordService` with the path `userId` as the fixed owner filter.
+- The detail endpoint verifies the admin-selected user exists, then reuses the unified record detail flow with that `userId` so module ownership checks remain consistent.
+
+Admin speaking record detail returns the selected recording plus `sessionRecords`, allowing admin user control pages to show every recording in the same speaking session.
+
+Generic admin record detail `GET /api/admin/records/{module}/{recordId}` also returns `UserRecordDetailVO`, so admin and user replay screens share the same `detail`/`review` contract.
+
+Module-specific admin endpoints remain the source of complete functionality for test/question management, nested reading/listening content management and upload flows.
+
 ## Console Flow
 
 Main controllers:
@@ -121,11 +146,12 @@ Main controllers:
 
 Purpose:
 
-- Keep deterministic visual/summary data available without going through the AI assistant route.
-- Reuse dashboard VO shapes where appropriate, especially `UserDashboardOverviewVisualVO`.
-- Provide a narrow frontend surface:
-  - `GET /api/admin/console/overview`
-  - `GET /api/user/console/overview-visual`
+- Keep deterministic full console data available without going through the AI assistant route.
+- Use console-owned VO shapes for the latest backend dashboard contract instead of preserving older overview visual fields.
+- Provide one full-page GET surface per role:
+  - `GET /api/admin/console`
+  - `GET /api/user/console`
+- Admin console is a global management overview and does not accept `targetUserId`.
 
 Core services:
 
@@ -133,7 +159,7 @@ Core services:
 - `console/service/UserConsoleService`
 - `console/service/LearningConsoleQueryService`
 
-The dashboard services also delegate deterministic overview/summary calls into `console` services, reducing duplicate SQL and aggregation logic.
+`AdminConsoleService` and `UserConsoleService` assemble the public console payloads. Dashboard handlers and profile stats use `LearningConsoleQueryService` directly for smaller deterministic query slices.
 
 ## Unified User Record Flow
 
@@ -145,9 +171,12 @@ Purpose:
 
 - Give frontend one record listing/detail/delete/restore API for all IELTS modules.
 - Keep module-specific ownership and business rules in original services.
+- Provide `GET /api/user/records` for a cross-module basic list with global sorting, filtering and pagination.
+- The basic list includes score fields and supports score sorting in addition to time/name/module/status sorting.
 - Normalize list display into `UserRecordItemVO`.
 - Preserve module-specific raw list item under `raw`.
-- Normalize detail display into `UserRecordDetailVO` with `detailType` and module-specific `detail`.
+- Normalize detail display into `UserRecordDetailVO` with `detailType`, module-specific `detail`, and standardized `review`.
+- Detail payloads carry replay data for the frontend: reading keeps passages and group instructions under `parts[].groups[]`, listening keeps group instructions plus test/part-group audio, writing keeps `prompt`, text/OCR, attachments, question images, and a merged `previewAssets` list for question/answer media preview, and speaking keeps `prompt`/cue-card fields.
 
 Supported module types:
 
@@ -164,22 +193,23 @@ Supported record states:
 Key classes:
 
 - `record/service/impl/UserRecordServiceImpl`
+- `record/mapper/UserRecordListMapper`
 - `record/support/UserRecordAdapter`
 - `record/support/ReadingUserRecordAdapter`
 - `record/support/ListeningUserRecordAdapter`
 - `record/support/WritingUserRecordAdapter`
 - `record/support/SpeakingUserRecordAdapter`
-- `record/domain/query/UserRecordPageQuery`
-- `record/domain/vo/UserRecordItemVO`
-- `record/domain/vo/UserRecordDetailVO`
+- `record/support/RecordReviewBuilder`
 
 Flow:
 
-1. Frontend calls `/api/user/records/overview` with `moduleType`, `recordState`, paging and optional filters.
-2. `UserRecordServiceImpl` normalizes module/state and selects a `UserRecordAdapter`.
-3. Adapter converts unified query into module-specific query and calls the module user service.
-4. Detail/delete/restore are delegated to the same adapter so ownership checks remain module-owned.
-5. Speaking whole-session review uses `UserSpeakingService.getSessionSummary` via `/api/user/records/speaking/sessions/{sessionId}`.
+1. Frontend calls `GET /api/user/records` for a cross-module basic list. `UserRecordListMapper` uses SQL `union all` across four record tables so module/status filters and sorting are globally correct.
+2. Frontend can still call `/api/user/records/overview` with `moduleType`, `recordState`, paging and optional module-specific filters.
+3. `UserRecordServiceImpl` normalizes module/state and selects a `UserRecordAdapter` for the module-specific overview/detail/delete/restore paths.
+4. Adapter converts unified query into module-specific query and calls the module user service.
+5. Detail/delete/restore are delegated to the same adapter so ownership checks remain module-owned.
+6. `RecordReviewBuilder` converts module details into review payloads. Reading/listening review preserves the original exam page structure, including reading passage titles/content and listening audio, then adds merged question answer rows; writing review carries question images, uploaded answer attachments, a merged `previewAssets` list, and uses final OCR text for image/PDF submissions when present; speaking review expands a single record into the whole session with final scores and per-question recordings/comments.
+7. Speaking whole-session review is also available through `/api/user/records/speaking/sessions/{sessionId}`.
 
 ## User And Admin User Flow
 
@@ -192,7 +222,6 @@ Main capabilities:
 
 - profile read/update
 - profile picture upload/read
-- overview and stats aggregation
 - IELTS target score fields
 - profile picture OSS object management
 
@@ -203,9 +232,10 @@ Admin user:
 
 Main capabilities:
 
-- active user list with aggregate counts via `AdminUserListVO`
+- active user list via `GET /api/admin/users/list`, returning user profile basics and IELTS target scores without concrete user record rows
 - deleted user page
-- user detail with profile, record counts, and record page summary fields
+- user detail with profile and aggregate record counts
+- user-scoped record detail via `GET /api/admin/users/{userId}/records/{moduleType}/{recordId}`, returning the same `UserRecordDetailVO.detail` and `review` contract as the user record API
 - soft delete / restore
 
 ## Reading Flow
@@ -217,18 +247,22 @@ Main controllers:
 
 User flow:
 
-1. List/get tests.
+1. List tests.
 2. Start a session and receive `ReadingSessionVO`.
 3. Fetch/pause/resume session.
 4. Submit `ReadingSubmitDTO`.
 5. Backend validates ownership/session status, judges answers, writes record and answer rows.
-6. User/admin record pages and record detail are available through both module endpoints and unified `record` endpoints.
+6. User record detail/delete is available through the unified record API; admin record list/detail/delete/restore is available through `/api/admin/records`.
 
 Admin flow:
 
-- Manage tests, passages, part groups, questions, and records.
-- Part group images use shared `BizImageResourceService`.
+- Manage test shell/list/delete/restore, full test content, images, and other reading setup flows.
+- Save full test content with `/api/admin/reading/tests/{testId}/full`; this is the official admin entrypoint for passages, part groups, questions, sorting, soft delete, and restore.
+- Part group/question image upload stays as multipart resource endpoints and uses shared `BizImageResourceService`.
 - Accepted answer rules and judging behavior stay backend-owned.
+- Admin create/update uses `prepSeconds` for preparation time and `totalMinutes` for formal exam time; legacy `prepMinutes` remains accepted as a fallback.
+- User test list and session responses return both seconds and minutes.
+- Starting a reading session immediately creates an `IN_PROGRESS` record.
 
 ## Listening Flow
 
@@ -239,17 +273,22 @@ Main controllers:
 
 User flow mirrors reading:
 
-1. List/get listening tests.
+1. List listening tests.
 2. Start/fetch/pause/resume session.
 3. Submit `ListeningSubmitDTO`.
 4. Backend judges answers and persists record/answer rows.
-5. Detail response now includes test-level and part-group audio data used by frontend playback/review.
+5. Detail response includes test-level and part-group audio data used by frontend playback/review.
 
 Admin flow:
 
-- Manage tests, part groups, questions, records, test audio, and part-group audio.
-- Audio upload uses multipart `file` with optional `title`.
+- Manage test shell/list/detail/delete/restore, full test content, audio, images, and other listening setup flows.
+- Save full test content with `/api/admin/listening/tests/{testId}/full`; this is the official admin entrypoint for part groups, questions, sorting, soft delete, restore, audio references, and image references.
+- Test audio, part-group audio, and image upload stay as multipart resource endpoints.
+- Audio upload uses multipart `file` with optional `title` and optional `transcriptText`. A test-level audio row represents one tape for the whole test; a part-group audio row represents one tape for one task/group.
 - `allowAudioSeek` is part of the current listening test/session contract.
+- Admin create/update uses `prepSeconds` for preparation time and `totalMinutes` for formal exam time; legacy `prepMinutes` remains accepted as a fallback.
+- User test list and session responses return both seconds and minutes.
+- Starting a listening session immediately creates an `IN_PROGRESS` record.
 
 ## Writing Flow
 
@@ -265,14 +304,21 @@ User submission:
 3. Supported inputs: `textContent`, multiple `images`, single `pdf`, optional `targetScore`.
 4. `WritingSubmissionValidator` validates input combinations.
 5. Backend uploads files to OSS, extracts text when needed, creates record/attachments.
-6. AI scoring updates status, score, feedback, provider, and model.
+6. PDF submission first uses PDF text extraction; when that returns no text, the backend renders PDF pages to images, uploads the rendered pages, and runs OCR as fallback.
+7. Admin writing question image replacement generates `imageDetailDescription` from the uploaded question images using the writing AI image flow. The description focuses on chart/table/map/process data needed for scoring and excludes irrelevant visual-quality comments such as colour or clarity.
+8. AI scoring updates status, score, feedback, provider, and model. For writing questions with images, scoring includes both `description` and `imageDetailDescription`.
 
 Backend-owned values:
 
 - `inputType`: `TEXT`, `IMAGE`, `PDF`
 - file type
 - OCR/PDF extracted text
+- Writing question `imageDetailDescription`
 - AI status/result/provider/model
+- Writing AI feedback is requested in English, uses double-asterisk Markdown bold for key points, and separates paragraphs with a blank line.
+- Writing question create/update prefers `prepSeconds` for preparation time and `totalMinutes` for formal writing time; legacy `prepMinutes` remains accepted as a fallback, and optional `totalSeconds` can override `totalMinutes`.
+- Writing question `chartType` is optional metadata for IELTS Task 1 chart categories and remains `null` for prompts that do not use a chart category.
+- Writing has no start/session API; frontend handles prep countdown and formal exam timing before submit.
 
 ## Speaking Flow
 
@@ -288,7 +334,7 @@ User exam flow:
 3. Frontend asks for next question by `sessionId`.
 4. User submits answer audio with `sessionId`, `questionId`, multipart `file`.
 5. Backend uploads audio, performs ASR/scoring, stores speaking record, and updates session summary.
-6. User can fetch session summary, D-ID talk status, module record detail, or unified record detail.
+6. User can fetch session summary, D-ID talk status, or unified record detail.
 
 Audio-only upload:
 
@@ -308,26 +354,40 @@ Main controllers:
 
 Capabilities:
 
-- JSON ask endpoints.
-- SSE ask endpoints with staged events.
-- User/admin overview visual payloads.
-- User/admin executive summaries.
-- Preload payloads for frontend assistant calls.
+- JSON ask endpoints
+- SSE ask endpoints with staged events
+- User/admin overview visual payloads
+- User/admin executive summaries
+- Preload payloads for frontend assistant calls
+
+Executive summary cache:
+
+- `UserDashboardServiceImpl` and `AdminDashboardServiceImpl` cache executive summary VO payloads through `DashboardExecutiveSummaryCacheService`.
+- Redis keys are scoped by role, operator user, target/global scope, time range, and optional `summary_cache_key`.
+- Cache is enabled by default; `summary_cache_key` only narrows the frontend page-session cache scope.
+- Cache failures are non-blocking: services fall back to composing a fresh executive summary.
 
 Ask flow:
 
 1. Controller receives `DashboardAskRequest`.
 2. `DashboardIntentExecutionFacade` resolves role/operator/target context.
 3. Context resolver combines request context, preload payload, learning context, and question context.
-4. Intent parsing resolves capability/action/filter plan.
-5. Router dispatches to structured handlers or guarded SQL/query path.
-6. Answer compose/rewrite/review services produce final answer/data/suggestions/meta.
+4. For reading/listening record-level asks, learning context also includes `record_questions` so range prompts such as "Question 1-5" can reach AI with question text, saved answer, correct answer, accepted answers, correctness, and score.
+5. If `conversationHistory` is present, the facade passes prior user/assistant turns into ask decision, direct answer composition data, and structured-query fallback context so second-round follow-up questions can reference first-round content. If the current follow-up request omits `objectRef`, the facade also attempts to recover it from `conversationHistory[].meta.objectRef`, `conversationHistory[].meta.data.objectRef`, or `conversationHistory[].meta.response.data.objectRef`.
+6. Intent parsing resolves capability/action/filter plan.
+7. Router dispatches to structured handlers or guarded SQL/query path.
+8. SSE ask endpoints receive first-stage progress through `DashboardAskProgressListener` immediately after decision resolution.
+9. Answer compose/rewrite/review services produce final answer/data/suggestions/meta. Dashboard suggestions are emitted in English and should stay focused on useful IELTS follow-up actions for the current user context.
+10. SSE ask endpoints emit `finalStart(clearPrevious=true)`, stream `answerDelta` chunks, then send the full `result`.
 
 SSE events:
 
 - `start`
 - `loading`
 - `intentResolved`
+- `finalStart`
+- `answerDelta`
+- `finalEnd`
 - `result`
 - `error`
 - `done`
@@ -340,7 +400,7 @@ High-risk dashboard areas:
 - `dashboard/query/DashboardQueryPermissionGuard`
 - `dashboard/query/DashboardTableSchemaRegistry`
 - `dashboard/detail/**`
-- `dashboard/agent/intent/**`
+- `dashboard/agent/**`
 
 ## Storage, OSS, Multipart
 
@@ -365,11 +425,14 @@ Image resources:
 
 - `common/image/service/BizImageResourceService`
 - `common/image/domain/dto/BizImageResourceDTO`
+- table: `biz_image_resource`
 
 Multipart endpoints:
 
 - Writing submit: `targetScore`, `textContent`, `images`, `pdf`
+- Reading admin images: part group/question `file`
 - Listening admin audio: `file`, optional `title`
+- Listening admin images: part group/question `file`
 - Speaking answer: `sessionId`, `questionId`, `file`
 - Speaking upload audio: `file`, optional `sessionId`, `questionId`
 - User profile picture: `file`
@@ -397,6 +460,19 @@ SQL changes should preserve:
 - soft-delete filtering rules
 - ownership checks
 
+See `docs/database-overview.md` before adding or renaming a table.
+
+## Constants Naming
+
+Stable literal values shared across modules should live in a `*Constants` class and use `UPPER_SNAKE_CASE` field names, especially:
+
+- DB table names: `DbTableNames`, `DashboardTableNameConstants`
+- API message keys/text: `ApiMessageConstants`
+- storage target/bucket/path values: `StorageBizConstants`
+- module/status/detail values: `UserRecordModuleConstants`, `UserRecordStateConstants`, `SpeakingStatusConstants`
+
+Runtime values and injected collaborators keep `lowerCamelCase` even when `final`. Existing public DTO/VO fields, request parameters, response fields, DB columns, and mapper aliases should not be renamed just for style.
+
 ## Testing Notes
 
 General rules:
@@ -419,7 +495,7 @@ mvn -q -DskipTests compile
 API mapping:
 
 ```powershell
-rg -n "@RequestMapping|@GetMapping|@PostMapping|@PutMapping|@DeleteMapping|@PatchMapping" src/main/java/com/andrew/smartielts
+rg -n --glob '*Controller.java' "@RequestMapping|@GetMapping|@PostMapping|@PutMapping|@DeleteMapping|@PatchMapping" src/main/java/com/andrew/smartielts
 ```
 
 DTO/query/VO fields:
@@ -434,6 +510,8 @@ Module entrypoints:
 - Current user: `user/controller/user/UserController.java`
 - Admin users: `user/controller/admin/AdminUserController.java`
 - Console: `console/controller/*`
+- Generic admin exams: `admin/exam/controller/AdminExamController.java`
+- Generic admin records: `record/controller/admin/AdminUserRecordController.java`
 - User records: `record/controller/UserRecordController.java`
 - Reading: `reading/controller/*`
 - Listening: `listening/controller/*`
@@ -451,8 +529,9 @@ High-risk source areas that justify direct lookup:
 
 ## Documentation Update Checklist
 
-When API or backend structure changes:
+When API, backend structure, or DB schema changes:
 
 - Update `docs/api/api-contract.md` for role, path, method, request fields, response shape, multipart and SSE details.
 - Update this overview for package/module/service flow changes.
+- Update `docs/database-overview.md` for table/column/relationship/migration changes.
 - Update `AGENTS.md` only for stable project memory, workflow rules, test/login facts, or project-level conventions that future agents must follow.

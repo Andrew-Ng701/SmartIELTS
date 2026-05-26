@@ -7,6 +7,7 @@ import com.andrew.smartielts.listening.domain.query.user.UserListeningDeletedRec
 import com.andrew.smartielts.listening.domain.query.user.UserListeningRecordPageQuery;
 import com.andrew.smartielts.listening.domain.vo.ListeningRecordDetailVO;
 import com.andrew.smartielts.listening.domain.vo.ListeningRecordVO;
+import com.andrew.smartielts.listening.domain.vo.ListeningSectionScriptVO;
 import com.andrew.smartielts.listening.domain.vo.ListeningSessionVO;
 import com.andrew.smartielts.listening.domain.vo.ListeningTestDetailVO;
 
@@ -15,8 +16,6 @@ import java.util.List;
 public interface UserListeningService {
 
     List<ListeningTestDetailVO> listTests();
-
-    ListeningTestDetailVO getTestDetail(Long testId);
 
     ListeningSessionVO start(Long testId);
 
@@ -33,6 +32,8 @@ public interface UserListeningService {
     PageResult<ListeningRecordVO> pageDeletedRecords(Long userId, UserListeningDeletedRecordPageQuery query);
 
     ListeningRecordDetailVO getRecord(Long recordId, Long userId);
+
+    ListeningSectionScriptVO getRecordSectionScript(Long recordId, Long userId, Integer sectionNumber);
 
     void deleteRecord(Long recordId, Long userId);
 

@@ -20,7 +20,7 @@ public interface AuthMapper {
     void updatePasswordById(@Param("id") Long id,
                             @Param("password") String password);
 
-    void updateLastLoginTimeById(@Param("id") Long id);
+    void updateLoginStatsById(@Param("id") Long id);
 
     /**
      * tokenVersion = tokenVersion + 1

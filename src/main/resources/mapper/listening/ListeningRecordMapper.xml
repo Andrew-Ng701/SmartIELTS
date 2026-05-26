@@ -163,26 +163,10 @@
         <include refid="AdminActiveWhere"/>
     </select>
 
-    <select id="pageAdminActive" resultMap="ListeningRecordMap">
-        SELECT <include refid="ListeningRecordColumns"/>
-        FROM listening_record lr
-        <include refid="AdminActiveWhere"/>
-        <include refid="AdminActiveOrderBy"/>
-        LIMIT #{offset}, #{limit}
-    </select>
-
     <select id="countAdminDeleted" resultType="java.lang.Long">
         SELECT COUNT(1)
         FROM listening_record lr
         <include refid="AdminDeletedWhere"/>
-    </select>
-
-    <select id="pageAdminDeleted" resultMap="ListeningRecordMap">
-        SELECT <include refid="ListeningRecordColumns"/>
-        FROM listening_record lr
-        <include refid="AdminDeletedWhere"/>
-        <include refid="AdminDeletedOrderBy"/>
-        LIMIT #{offset}, #{limit}
     </select>
 
     <select id="findAnyById" resultMap="ListeningRecordMap">
@@ -282,6 +266,7 @@
         FROM listening_record
         WHERE user_id = #{userId}
           AND is_deleted = 0
+          AND record_status = 'submitted'
           AND total_score IS NOT NULL
     </select>
 

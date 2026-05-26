@@ -75,15 +75,16 @@ public final class DashboardSqlPromptConstants {
             Purpose:
             - user identity and role scope
             Key columns:
-            - id, email, username, role, is_deleted, created_time, ielts_target_scores
+            - id, email, username, role, is_deleted, created_time, last_login_time, consecutive_login_days, ielts_target_scores
             Notes:
             - ielts_target_scores stores target bands in listening,reading,writing,speaking order, for example 7,6.5,7,7.5.
+            - consecutive_login_days stores the backend-maintained current login streak.
 
             [listening_test]
             Purpose:
             - listening test metadata and timer setup
             Key columns:
-            - id, title, total_score, timer_mode, total_seconds, auto_submit, allow_pause, is_deleted
+            - id, title, total_score, timer_mode, prep_seconds, total_seconds, auto_submit, allow_pause, is_deleted
 
             [listening_part_group]
             Purpose:
@@ -127,7 +128,7 @@ public final class DashboardSqlPromptConstants {
             Purpose:
             - reading test metadata and timer setup
             Key columns:
-            - id, title, total_score, timer_mode, total_seconds, auto_submit, allow_pause, is_deleted
+            - id, title, total_score, timer_mode, prep_seconds, total_seconds, auto_submit, allow_pause, is_deleted
 
             [reading_part_group]
             Purpose:
@@ -174,8 +175,8 @@ public final class DashboardSqlPromptConstants {
             Purpose:
             - writing prompt source, including task type and prompt image
             Key columns:
-            - id, task_type, title, description, image_url, image_object_key, created_time, is_deleted, deleted_time,
-              image_target_migrated
+            - id, task_type, title, description, image_detail_description, prep_seconds, total_seconds,
+              created_time, is_deleted, deleted_time
 
             [writing_record]
             Purpose:

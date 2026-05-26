@@ -52,6 +52,7 @@ public class RegisterServiceImpl implements RegisterService {
         user.setIsDeleted(0);
         user.setDeletedTime(null);
         user.setCreatedTime(LocalDateTime.now());
+        user.setConsecutiveLoginDays(0);
         user.setTokenVersion(0L);
 
         authMapper.save(user);

@@ -1,7 +1,6 @@
 package com.andrew.smartielts.dashboard.controller;
 
 import com.andrew.smartielts.common.resultDTO.Result;
-import com.andrew.smartielts.console.service.UserConsoleService;
 import com.andrew.smartielts.dashboard.agent.DashboardIntentExecutionFacade;
 import com.andrew.smartielts.dashboard.controller.dto.DashboardAskRequest;
 import com.andrew.smartielts.dashboard.controller.dto.DashboardAssistantResponse;
@@ -10,7 +9,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 import com.andrew.smartielts.dashboard.constants.DashboardOverviewConstants;
-import com.andrew.smartielts.dashboard.domain.vo.UserDashboardOverviewVisualVO;
 import com.andrew.smartielts.dashboard.domain.vo.UserExecutiveSummaryVO;
 import com.andrew.smartielts.dashboard.service.UserDashboardService;
 
@@ -22,7 +20,6 @@ public class UserDashboardController {
 
     private final DashboardIntentExecutionFacade executionFacade;
     private final UserDashboardService userDashboardService;
-    private final UserConsoleService userConsoleService;
 
     @PostMapping("/ask")
     public Result<DashboardAssistantResponse> ask(@RequestBody DashboardAskRequest request) {
@@ -51,22 +48,15 @@ public class UserDashboardController {
         return Result.success(response);
     }
 
-    @GetMapping("/overview_visual")
-    public Result<UserDashboardOverviewVisualVO> getUserOverviewVisual(
-            @RequestParam(name = DashboardOverviewConstants.QUERY_PARAM_TIME_RANGE,
-                    defaultValue = DashboardOverviewConstants.DEFAULT_TIME_RANGE) String timeRange) {
-
-        Long operatorUserId = currentUserId();
-        return Result.success(userConsoleService.overviewVisual(operatorUserId, timeRange));
-    }
-
     @GetMapping("/executive_summary")
     public Result<UserExecutiveSummaryVO> getUserExecutiveSummary(
             @RequestParam(name = DashboardOverviewConstants.QUERY_PARAM_TIME_RANGE,
-                    defaultValue = DashboardOverviewConstants.DEFAULT_TIME_RANGE) String timeRange) {
+                    defaultValue = DashboardOverviewConstants.DEFAULT_TIME_RANGE) String timeRange,
+            @RequestParam(name = DashboardOverviewConstants.QUERY_PARAM_SUMMARY_CACHE_KEY, required = false)
+            String summaryCacheKey) {
 
         Long operatorUserId = currentUserId();
-        return Result.success(userDashboardService.userExecutiveSummary(operatorUserId, timeRange));
+        return Result.success(userDashboardService.userExecutiveSummary(operatorUserId, timeRange, summaryCacheKey));
     }
 
     private Long currentUserId() {

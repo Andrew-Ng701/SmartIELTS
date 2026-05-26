@@ -1,6 +1,8 @@
 package com.andrew.smartielts.dashboard.query.impl;
 
 import com.andrew.smartielts.dashboard.agent.answer.DashboardSuggestionService;
+import com.andrew.smartielts.dashboard.agent.answer.DashboardSuggestionPerspectiveNormalizer;
+import com.andrew.smartielts.dashboard.agent.answer.DashboardUserTargetScoreContext;
 import com.andrew.smartielts.dashboard.agent.intent.dto.DashboardIntentParseResult;
 import com.andrew.smartielts.dashboard.query.DashboardSqlGenerationService;
 import com.andrew.smartielts.dashboard.query.dto.DashboardSqlGenerationRequest;
@@ -47,7 +49,8 @@ public class DashboardSqlGenerationServiceImpl implements DashboardSqlGeneration
                                                String originalQuery,
                                                DashboardIntentParseResult intent,
                                                DashboardSqlGenerationResult sqlPlan,
-                                               List<Map<String, Object>> rows) {
+                                               List<Map<String, Object>> rows,
+                                               Map<String, Object> context) {
 
         DashboardSqlReviewRequest request = new DashboardSqlReviewRequest();
         request.setRole(role);
@@ -58,6 +61,7 @@ public class DashboardSqlGenerationServiceImpl implements DashboardSqlGeneration
         request.setIntent(intent);
         request.setSqlPlan(sqlPlan);
         request.setRows(rows);
+        request.setUserTargetScores(DashboardUserTargetScoreContext.fromContext(context));
 
         DashboardSqlReviewResult reviewResult = dashboardSqlLlmClient.reviewAnswer(request);
         if (reviewResult == null) {
@@ -159,9 +163,10 @@ public class DashboardSqlGenerationServiceImpl implements DashboardSqlGeneration
     }
 
     private List<String> safeSuggestions(List<String> suggestions) {
-        return suggestions == null ? List.of() : suggestions.stream()
+        List<String> cleaned = suggestions == null ? List.of() : suggestions.stream()
                 .filter(it -> it != null && !it.isBlank())
                 .limit(3)
                 .toList();
+        return DashboardSuggestionPerspectiveNormalizer.normalize(cleaned);
     }
 }

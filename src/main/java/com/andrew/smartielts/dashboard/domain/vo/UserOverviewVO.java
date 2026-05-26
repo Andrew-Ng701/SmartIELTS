@@ -1,5 +1,6 @@
 package com.andrew.smartielts.dashboard.domain.vo;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import lombok.Data;
 
 import java.math.BigDecimal;
@@ -15,6 +16,9 @@ public class UserOverviewVO {
     private String username;
 
     private LocalDateTime lastLoginTime;
+
+    @JsonIgnore
+    private Integer consecutiveLoginDays;
 
     private BigDecimal listeningTargetScore;
 

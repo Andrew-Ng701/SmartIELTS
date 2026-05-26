@@ -7,6 +7,7 @@ import com.andrew.smartielts.speaking.ai.dto.SpeakingFinalEvaluationResult;
 import com.andrew.smartielts.speaking.ai.service.SpeakingFinalEvaluationService;
 import com.andrew.smartielts.speaking.ai.service.SpeakingScoreAiService;
 import com.andrew.smartielts.speaking.aliyun.AliyunBailianAsrClient;
+import com.andrew.smartielts.speaking.did.DidProperties;
 import com.andrew.smartielts.speaking.did.service.DidSpeakingService;
 import com.andrew.smartielts.speaking.domain.pojo.SpeakingTalk;
 import com.andrew.smartielts.speaking.domain.dto.NextQuestionRequestDTO;
@@ -64,6 +65,7 @@ public class UserSpeakingServiceImpl implements UserSpeakingService {
     private final SpeakingRecordMapper speakingRecordMapper;
     private final SpeakingSessionMapper speakingSessionMapper;
     private final SpeakingTalkMapper speakingTalkMapper;
+    private final DidProperties didProperties;
     private final DidSpeakingService didSpeakingService;
     private final SpeakingExamPlanner speakingExamPlanner;
     private final SpeakingScriptBuilder speakingScriptBuilder;
@@ -79,6 +81,7 @@ public class UserSpeakingServiceImpl implements UserSpeakingService {
                                    SpeakingRecordMapper speakingRecordMapper,
                                    SpeakingSessionMapper speakingSessionMapper,
                                    SpeakingTalkMapper speakingTalkMapper,
+                                   DidProperties didProperties,
                                    DidSpeakingService didSpeakingService,
                                    SpeakingExamPlanner speakingExamPlanner,
                                    SpeakingScriptBuilder speakingScriptBuilder,
@@ -92,6 +95,7 @@ public class UserSpeakingServiceImpl implements UserSpeakingService {
         this.speakingRecordMapper = speakingRecordMapper;
         this.speakingSessionMapper = speakingSessionMapper;
         this.speakingTalkMapper = speakingTalkMapper;
+        this.didProperties = didProperties;
         this.didSpeakingService = didSpeakingService;
         this.speakingExamPlanner = speakingExamPlanner;
         this.speakingScriptBuilder = speakingScriptBuilder;
@@ -106,15 +110,6 @@ public class UserSpeakingServiceImpl implements UserSpeakingService {
     @Override
     public List<SpeakingQuestion> listAllSpeakingQuestion() {
         return speakingMapper.findAll();
-    }
-
-    @Override
-    public SpeakingQuestion getSpeakingQuestion(Long id) {
-        SpeakingQuestion question = speakingMapper.findById(id);
-        if (question == null) {
-            throw new RuntimeException("Speaking question not found");
-        }
-        return question;
     }
 
     @Override
@@ -209,7 +204,18 @@ public class UserSpeakingServiceImpl implements UserSpeakingService {
 
         String spokenScript = speakingScriptBuilder.buildSpokenScript(current, previous, question);
         String displayScript = speakingScriptBuilder.buildDisplayScript(current, question);
-        String talkId = didSpeakingService.createTalk(spokenScript);
+        String talkId;
+        try {
+            talkId = didSpeakingService.createTalk(spokenScript);
+        } catch (Exception e) {
+            log.error("Failed to create D-ID talk for speaking question, sessionId={}, questionId={}, didBaseUrl={}, presenterId={}",
+                    session.getSessionId(),
+                    question.getId(),
+                    didProperties == null ? null : didProperties.getBaseUrl(),
+                    didProperties == null ? null : didProperties.getPresenterId(),
+                    e);
+            throw new RuntimeException("Failed to create D-ID talk", e);
+        }
         saveTalk(talkId, currentUserId, session.getSessionId(), question.getId());
 
         NextQuestionVO vo = new NextQuestionVO();
@@ -541,7 +547,9 @@ public class UserSpeakingServiceImpl implements UserSpeakingService {
         if (!userId.equals(record.getUserId())) {
             throw new RuntimeException("No permission to access this record");
         }
-        return toRecordDetailVO(record);
+        SpeakingRecordDetailVO detail = toRecordDetailVO(record);
+        detail.setSessionRecords(toSessionRecordVOs(record.getSessionId()));
+        return detail;
     }
 
     @Override
@@ -599,13 +607,18 @@ public class UserSpeakingServiceImpl implements UserSpeakingService {
                 vo.setSessionId(record.getSessionId());
                 vo.setPart(question != null ? question.getPart() : null);
                 vo.setQuestionText(question != null ? question.getQuestionText() : null);
+                vo.setPrompt(question != null ? question.getQuestionText() : null);
+                vo.setCueCard(question != null ? question.getCueCard() : null);
                 vo.setAudioUrl(record.getAudioUrl());
+                vo.setTranscript(record.getTranscript());
                 vo.setFluencyAndCoherence(record.getFluencyAndCoherence());
                 vo.setLexicalResource(record.getLexicalResource());
                 vo.setGrammaticalRangeAndAccuracy(record.getGrammaticalRangeAndAccuracy());
                 vo.setPronunciation(record.getPronunciation());
                 vo.setOverallScore(record.getOverallScore());
                 vo.setFeedback(record.getFeedback());
+                vo.setRelevanceComment(record.getRelevanceComment());
+                vo.setQualityComment(record.getQualityComment());
                 vo.setAnswerStatus(record.getAnswerStatus());
                 vo.setIsDeleted(record.getIsDeleted());
                 vo.setDeletedTime(record.getDeletedTime());
@@ -767,6 +780,7 @@ public class UserSpeakingServiceImpl implements UserSpeakingService {
 
         vo.setPart(question != null ? question.getPart() : null);
         vo.setQuestionText(question != null ? question.getQuestionText() : null);
+        vo.setPrompt(question != null ? question.getQuestionText() : null);
         vo.setFluencyAndCoherence(record.getFluencyAndCoherence());
         vo.setLexicalResource(record.getLexicalResource());
         vo.setGrammaticalRangeAndAccuracy(record.getGrammaticalRangeAndAccuracy());
@@ -796,6 +810,7 @@ public class UserSpeakingServiceImpl implements UserSpeakingService {
 
         vo.setPart(question != null ? question.getPart() : null);
         vo.setQuestionText(question != null ? question.getQuestionText() : null);
+        vo.setPrompt(question != null ? question.getQuestionText() : null);
         vo.setCueCard(question != null ? question.getCueCard() : null);
 
         vo.setAudioUrl(record.getAudioUrl());
@@ -818,6 +833,51 @@ public class UserSpeakingServiceImpl implements UserSpeakingService {
         vo.setCreatedTime(record.getCreatedTime());
         vo.setUpdatedTime(record.getUpdatedTime());
         return vo;
+    }
+
+    private List<SpeakingRecordVO> toSessionRecordVOs(String sessionId) {
+        if (sessionId == null || sessionId.isBlank()) {
+            return new ArrayList<>();
+        }
+        List<SpeakingRecord> records = speakingRecordMapper.findBySessionId(sessionId);
+        List<SpeakingRecordVO> recordVos = new ArrayList<>();
+        if (records == null) {
+            return recordVos;
+        }
+        for (SpeakingRecord record : records) {
+            SpeakingQuestion question = record.getQuestionId() == null
+                    ? null
+                    : findQuestionIncludingDeleted(record.getQuestionId());
+
+            SpeakingRecordVO vo = new SpeakingRecordVO();
+            vo.setId(record.getId());
+            vo.setQuestionId(record.getQuestionId());
+            vo.setSessionId(record.getSessionId());
+            vo.setPart(question != null ? question.getPart() : null);
+            vo.setQuestionText(question != null ? question.getQuestionText() : null);
+            vo.setPrompt(question != null ? question.getQuestionText() : null);
+            vo.setCueCard(question != null ? question.getCueCard() : null);
+            vo.setAudioUrl(record.getAudioUrl());
+            vo.setTranscript(record.getTranscript());
+            vo.setFluencyAndCoherence(record.getFluencyAndCoherence());
+            vo.setLexicalResource(record.getLexicalResource());
+            vo.setGrammaticalRangeAndAccuracy(record.getGrammaticalRangeAndAccuracy());
+            vo.setPronunciation(record.getPronunciation());
+            vo.setOverallScore(record.getOverallScore());
+            vo.setFeedback(record.getFeedback());
+            vo.setRelevanceComment(record.getRelevanceComment());
+            vo.setQualityComment(record.getQualityComment());
+            vo.setAnswerStatus(record.getAnswerStatus());
+            vo.setIsDeleted(record.getIsDeleted());
+            vo.setDeletedTime(record.getDeletedTime());
+            vo.setAiStatus(record.getAiStatus());
+            vo.setAiProvider(record.getAiProvider());
+            vo.setAiModel(record.getAiModel());
+            vo.setAiErrorMessage(record.getAiErrorMessage());
+            vo.setCreatedTime(record.getCreatedTime());
+            recordVos.add(vo);
+        }
+        return recordVos;
     }
 
     private SpeakingQuestion findQuestionIncludingDeleted(Long questionId) {

@@ -14,6 +14,7 @@ public class DashboardAnswerComposeRequest {
     private String originalQuery;
     private String capability;
     private Map<String, Object> filters;
+    private Map<String, Object> userTargetScores;
     private Object data;
     private String responseLanguage;
 }

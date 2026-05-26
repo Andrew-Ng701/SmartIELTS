@@ -4,6 +4,7 @@ import lombok.Data;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Data
 public class SpeakingRecordDetailVO {
@@ -17,6 +18,8 @@ public class SpeakingRecordDetailVO {
     private String part;
 
     private String questionText;
+
+    private String prompt;
 
     private String cueCard;
 
@@ -57,4 +60,6 @@ public class SpeakingRecordDetailVO {
     private LocalDateTime createdTime;
 
     private LocalDateTime updatedTime;
+
+    private List<SpeakingRecordVO> sessionRecords;
 }

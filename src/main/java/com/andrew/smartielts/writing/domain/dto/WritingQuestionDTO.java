@@ -10,9 +10,21 @@ public class WritingQuestionDTO {
 
     private String taskType;
 
+    private String chartType;
+
     private String title;
 
     private String description;
+
+    private String imageDetailDescription;
+
+    private Integer prepMinutes;
+
+    private Integer totalMinutes;
+
+    private Integer prepSeconds;
+
+    private Integer totalSeconds;
 
     private List<BizImageResourceDTO> images;
 }

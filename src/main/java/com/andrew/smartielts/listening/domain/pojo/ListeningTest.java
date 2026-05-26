@@ -23,7 +23,13 @@ public class ListeningTest {
 
     private String timerMode;
 
+    private Integer prepSeconds;
+
     private Integer totalSeconds;
+
+    private Integer prepMinutes;
+
+    private Integer totalMinutes;
 
     private Integer autoSubmit;
 

@@ -283,29 +283,11 @@
         <include refid="ReadingAdminActiveWhere"/>
     </select>
 
-    <select id="pageAdminActive" resultMap="ReadingRecordResultMap">
-        SELECT <include refid="BaseColumnListWithAlias"/>
-        FROM reading_record rr
-        LEFT JOIN reading_test rt ON rt.id = rr.test_id
-        <include refid="ReadingAdminActiveWhere"/>
-        <include refid="ReadingOrderByAdminActive"/>
-        LIMIT #{offset}, #{limit}
-    </select>
-
     <select id="countAdminDeleted" resultType="java.lang.Long">
         SELECT COUNT(1)
         FROM reading_record rr
         LEFT JOIN reading_test rt ON rt.id = rr.test_id
         <include refid="ReadingAdminDeletedWhere"/>
-    </select>
-
-    <select id="pageAdminDeleted" resultMap="ReadingRecordResultMap">
-        SELECT <include refid="BaseColumnListWithAlias"/>
-        FROM reading_record rr
-        LEFT JOIN reading_test rt ON rt.id = rr.test_id
-        <include refid="ReadingAdminDeletedWhere"/>
-        <include refid="ReadingOrderByAdminDeleted"/>
-        LIMIT #{offset}, #{limit}
     </select>
 
     <update id="softDeleteById">
@@ -352,6 +334,7 @@
         FROM reading_record
         WHERE user_id = #{userId}
           AND is_deleted = 0
+          AND record_status IN ('submitted', 'auto_submitted')
           AND total_score IS NOT NULL
     </select>
 

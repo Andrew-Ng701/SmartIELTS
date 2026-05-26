@@ -1,11 +1,13 @@
 package com.andrew.smartielts.dashboard.agent.ask.dto;
 
 import com.andrew.smartielts.dashboard.controller.dto.DashboardAskClientContext;
+import com.andrew.smartielts.dashboard.controller.dto.DashboardAskConversationMessage;
 import com.andrew.smartielts.dashboard.controller.dto.DashboardAskObjectRef;
 import com.andrew.smartielts.dashboard.controller.dto.DashboardAskPreloadedPayload;
 import lombok.Builder;
 import lombok.Data;
 
+import java.util.List;
 import java.util.Map;
 
 @Data
@@ -19,6 +21,8 @@ public class DashboardAskDecisionRequest {
     private Long targetUserId;
 
     private String query;
+
+    private List<DashboardAskConversationMessage> conversationHistory;
 
     private String responseLanguage;
 

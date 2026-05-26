@@ -3,7 +3,7 @@ package com.andrew.smartielts.dashboard.agent.handler.admin;
 import com.andrew.smartielts.dashboard.agent.DashboardAgentContext;
 import com.andrew.smartielts.dashboard.agent.DashboardCapability;
 import com.andrew.smartielts.dashboard.agent.DashboardCapabilityHandler;
-import com.andrew.smartielts.console.service.AdminConsoleService;
+import com.andrew.smartielts.console.service.LearningConsoleQueryService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -11,7 +11,7 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class AdminRecentIssuesHandler implements DashboardCapabilityHandler {
 
-    private final AdminConsoleService adminConsoleService;
+    private final LearningConsoleQueryService learningConsoleQueryService;
 
     @Override
     public DashboardCapability support() {
@@ -20,6 +20,6 @@ public class AdminRecentIssuesHandler implements DashboardCapabilityHandler {
 
     @Override
     public Object handle(DashboardAgentContext context) {
-        return adminConsoleService.recentIssues();
+        return learningConsoleQueryService.adminRecentIssues();
     }
 }

@@ -1,0 +1,162 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.andrew.smartielts.record.mapper.AdminUserRecordListMapper">
+
+    <sql id="UnionRecords">
+        select
+            rr.id as record_id,
+            rr.user_id as user_id,
+            coalesce(rt.title, concat('Reading Test #', rr.test_id)) as name,
+            'READING' as module,
+            case when rr.is_deleted = 1 then 'DELETED' else upper(rr.record_status) end as status,
+            rr.total_score as score,
+            cast(rr.total_score as char) as score_text,
+            rr.created_time as updated_time,
+            rr.created_time as created_time,
+            rr.is_deleted as is_deleted,
+            null as deleted_time
+        from reading_record rr
+        left join reading_test rt on rt.id = rr.test_id
+
+        union all
+
+        select
+            lr.id as record_id,
+            lr.user_id as user_id,
+            coalesce(lt.title, concat('Listening Test #', lr.test_id)) as name,
+            'LISTENING' as module,
+            case when lr.is_deleted = 1 then 'DELETED' else upper(lr.record_status) end as status,
+            lr.total_score as score,
+            cast(lr.total_score as char) as score_text,
+            lr.created_time as updated_time,
+            lr.created_time as created_time,
+            lr.is_deleted as is_deleted,
+            null as deleted_time
+        from listening_record lr
+        left join listening_test lt on lt.id = lr.test_id
+
+        union all
+
+        select
+            wr.id as record_id,
+            wr.user_id as user_id,
+            coalesce(wq.title, concat('Writing Question #', wr.question_id)) as name,
+            'WRITING' as module,
+            case when wr.is_deleted = 1 then 'DELETED' else upper(wr.ai_status) end as status,
+            wr.ai_score as score,
+            cast(wr.ai_score as char) as score_text,
+            case when wr.is_deleted = 1 and wr.deleted_time is not null then wr.deleted_time else wr.created_time end as updated_time,
+            wr.created_time as created_time,
+            wr.is_deleted as is_deleted,
+            wr.deleted_time as deleted_time
+        from writing_record wr
+        left join writing_question wq on wq.id = wr.question_id
+
+        union all
+
+        select
+            sr.id as record_id,
+            sr.user_id as user_id,
+            coalesce(sq.question_text, concat('Speaking Question #', sr.question_id)) as name,
+            'SPEAKING' as module,
+            case
+                when sr.is_deleted = 1 then 'DELETED'
+                when sr.answer_status is not null and sr.answer_status != '' then upper(sr.answer_status)
+                else upper(sr.ai_status)
+            end as status,
+            sr.overall_score as score,
+            cast(sr.overall_score as char) as score_text,
+            case
+                when sr.is_deleted = 1 and sr.deleted_time is not null then sr.deleted_time
+                when sr.updated_time is not null then sr.updated_time
+                else sr.created_time
+            end as updated_time,
+            sr.created_time as created_time,
+            sr.is_deleted as is_deleted,
+            sr.deleted_time as deleted_time
+        from speaking_record sr
+        left join speaking_question sq on sq.id = sr.question_id
+    </sql>
+
+    <sql id="RecordFilters">
+        <where>
+            <choose>
+                <when test="recordState == 'DELETED'">
+                    records.is_deleted = 1
+                </when>
+                <otherwise>
+                    records.is_deleted = 0
+                </otherwise>
+            </choose>
+            <if test="module != null and module != ''">
+                and records.module = #{module}
+            </if>
+            <if test="status != null and status != ''">
+                and records.status = #{status}
+            </if>
+            <if test="userId != null">
+                and records.user_id = #{userId}
+            </if>
+        </where>
+    </sql>
+
+    <sql id="RecordOrderBy">
+        <choose>
+            <when test="sort == 'UPDATED_ASC'">
+                order by records.updated_time asc, records.record_id asc
+            </when>
+            <when test="sort == 'SCORE_DESC'">
+                order by records.score is null asc, records.score desc, records.updated_time desc, records.record_id desc
+            </when>
+            <when test="sort == 'SCORE_ASC'">
+                order by records.score is null asc, records.score asc, records.updated_time desc, records.record_id desc
+            </when>
+            <when test="sort == 'NAME_ASC'">
+                order by records.name asc, records.updated_time desc, records.record_id desc
+            </when>
+            <when test="sort == 'NAME_DESC'">
+                order by records.name desc, records.updated_time desc, records.record_id desc
+            </when>
+            <when test="sort == 'MODULE_ASC'">
+                order by records.module asc, records.updated_time desc, records.record_id desc
+            </when>
+            <when test="sort == 'STATUS_ASC'">
+                order by records.status asc, records.updated_time desc, records.record_id desc
+            </when>
+            <otherwise>
+                order by records.updated_time desc, records.record_id desc
+            </otherwise>
+        </choose>
+    </sql>
+
+    <select id="countRecords" resultType="java.lang.Long">
+        select count(1)
+        from (
+            <include refid="UnionRecords"/>
+        ) records
+        <include refid="RecordFilters"/>
+    </select>
+
+    <select id="pageRecords" resultType="com.andrew.smartielts.record.domain.vo.admin.AdminUserRecordListItemVO">
+        select
+            records.record_id,
+            records.user_id,
+            records.name,
+            records.module,
+            records.status,
+            records.score,
+            records.score_text,
+            records.updated_time,
+            records.created_time,
+            records.is_deleted,
+            records.deleted_time
+        from (
+            <include refid="UnionRecords"/>
+        ) records
+        <include refid="RecordFilters"/>
+        <include refid="RecordOrderBy"/>
+        limit #{limit} offset #{offset}
+    </select>
+</mapper>

@@ -84,6 +84,7 @@ public class DashScopeDashboardAskDecisionClient implements DashboardAskDecision
                     safeString(request.getAskScene()),
                     safeString(request.getResponseMode()),
                     safeString(request.getQuery()),
+                    objectMapper.writeValueAsString(request.getConversationHistory() == null ? List.of() : request.getConversationHistory()),
                     objectMapper.writeValueAsString(request.getObjectRef() == null ? Map.of() : request.getObjectRef()),
                     objectMapper.writeValueAsString(request.getPreloadedPayload() == null ? Map.of() : request.getPreloadedPayload()),
                     objectMapper.writeValueAsString(request.getClientContext() == null ? Map.of() : request.getClientContext()),

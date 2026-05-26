@@ -3,7 +3,7 @@ package com.andrew.smartielts.dashboard.agent.handler.user;
 import com.andrew.smartielts.dashboard.agent.DashboardAgentContext;
 import com.andrew.smartielts.dashboard.agent.DashboardCapability;
 import com.andrew.smartielts.dashboard.agent.DashboardCapabilityHandler;
-import com.andrew.smartielts.console.service.UserConsoleService;
+import com.andrew.smartielts.console.service.LearningConsoleQueryService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -11,7 +11,7 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class UserSelfProgressSummaryHandler implements DashboardCapabilityHandler {
 
-    private final UserConsoleService userConsoleService;
+    private final LearningConsoleQueryService learningConsoleQueryService;
 
     @Override
     public DashboardCapability support() {
@@ -20,6 +20,6 @@ public class UserSelfProgressSummaryHandler implements DashboardCapabilityHandle
 
     @Override
     public Object handle(DashboardAgentContext context) {
-        return userConsoleService.progressSummary(context.getOperatorUserId());
+        return learningConsoleQueryService.userProgressSummary(context.getOperatorUserId());
     }
 }

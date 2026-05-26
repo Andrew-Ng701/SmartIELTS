@@ -40,25 +40,22 @@ SELECT COUNT(*) AS row_count
 FROM listening_question_answer_rule_backup_before_group_rules;
 ```
 
-## Do Not Remove Yet
+## Removed Cleanup Items
 
 ### `writing_question.image_target_migrated`
 
 - Type: column
 - Reason: migration marker column.
-- Current code references:
-  - `src/main/resources/mapper/writing/WritingQuestionMapper.xml`
-  - `src/main/java/com/andrew/smartielts/dashboard/query/DashboardTableSchemaRegistry.java`
-  - `src/main/java/com/andrew/smartielts/dashboard/query/DashboardSqlPromptConstants.java`
-- Production recommendation: keep for now. It is structurally migration-related, but still part of current application behavior and dashboard schema awareness.
+- Current code references: removed.
+- Production recommendation: drop through `scripts/sql/writing_question_drop_image_target_migrated.sql` after backup.
 
-Future cleanup sequence:
+Cleanup sequence:
 
 1. Remove or replace code paths that reference `image_target_migrated`.
 2. Compile and run affected writing/dashboard tests.
 3. Drop the column in a dedicated DB migration.
 
-Future removal SQL after code cleanup:
+Removal SQL:
 
 ```sql
 ALTER TABLE writing_question
@@ -92,7 +89,7 @@ scripts/sql/speaking_talk.sql
 1. Back up the database schema and data.
 2. Confirm `listening_question_answer_rule_backup_before_group_rules` is not referenced by application code in the target branch.
 3. Drop `listening_question_answer_rule_backup_before_group_rules`.
-4. Keep `writing_question.image_target_migrated` until code references are removed.
+4. Apply `scripts/sql/writing_question_drop_image_target_migrated.sql` when deploying the cleanup.
 5. Verify whether `speaking_talk` must be created for the target production release.
 6. Re-run schema scan after cleanup.
 

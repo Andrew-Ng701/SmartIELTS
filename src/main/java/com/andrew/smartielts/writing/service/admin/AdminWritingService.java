@@ -1,12 +1,10 @@
 package com.andrew.smartielts.writing.service.admin;
 
-import com.andrew.smartielts.common.page.PageResult;
 import com.andrew.smartielts.writing.domain.dto.WritingQuestionDTO;
-import com.andrew.smartielts.writing.domain.query.admin.AdminWritingDeletedRecordPageQuery;
-import com.andrew.smartielts.writing.domain.query.admin.AdminWritingRecordPageQuery;
 import com.andrew.smartielts.writing.domain.vo.WritingQuestionVO;
 import com.andrew.smartielts.writing.domain.vo.WritingRecordDetailVO;
-import com.andrew.smartielts.writing.domain.vo.WritingRecordVO;
+import com.andrew.smartielts.common.image.domain.pojo.BizImageResource;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 
@@ -20,13 +18,11 @@ public interface AdminWritingService {
 
     WritingQuestionVO updateQuestion(Long id, WritingQuestionDTO dto);
 
+    List<BizImageResource> replaceQuestionImages(Long id, MultipartFile[] images);
+
     void deleteQuestion(Long id);
 
     void restoreQuestion(Long id);
-
-    PageResult<WritingRecordVO> pageActiveRecords(AdminWritingRecordPageQuery query);
-
-    PageResult<WritingRecordVO> pageDeletedRecords(AdminWritingDeletedRecordPageQuery query);
 
     WritingRecordDetailVO getRecord(Long recordId);
 

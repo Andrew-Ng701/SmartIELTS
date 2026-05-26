@@ -75,7 +75,12 @@ class UserReadingServiceImplTest {
         ReadingTest emptyTest = test(2L, "Empty");
         TestPartGroup group = group(11L, 1, 1);
         ReadingPassage passage = passage(21L, 1L, 11L, 1);
+        String formattedQuestionText = "Challenges faced by RFDS dentists\n"
+                + "      need to bring equipment including (1) for records\n\n"
+                + "Products supplied by RFDS dentists if necessary RFDS provides:\n"
+                + "      (4) and (5) for regular use";
         ReadingQuestion question = question(31L, 21L, 11L, 1, "A");
+        question.setQuestionText(formattedQuestionText);
         BizImageResource image = image("https://cdn.test/group.png");
 
         when(readingTestMapper.findAllActive()).thenReturn(List.of(readyTest, emptyTest));
@@ -89,6 +94,8 @@ class UserReadingServiceImplTest {
         when(readingQuestionMapper.findActiveByPassageId(22L)).thenReturn(List.of());
         when(bizImageResourceService.listByTargets("READING_PART_GROUP", List.of(11L)))
                 .thenReturn(Map.of(11L, List.of(image)));
+        when(bizImageResourceService.listByTargets("READING_QUESTION", List.of(31L)))
+                .thenReturn(Map.of());
         when(bizImageResourceService.listByTargets("READING_PART_GROUP", List.of(12L)))
                 .thenReturn(Map.of());
 
@@ -97,6 +104,10 @@ class UserReadingServiceImplTest {
         assertEquals(1, result.size());
         ReadingTestDetailVO detail = result.get(0);
         assertEquals(1L, detail.getId());
+        assertEquals(120, detail.getPrepSeconds());
+        assertEquals(3600, detail.getTotalSeconds());
+        assertEquals(2, detail.getPrepMinutes());
+        assertEquals(60, detail.getTotalMinutes());
         assertEquals(1, detail.getParts().size());
         assertEquals(1, detail.getParts().get(0).getGroups().size());
         assertEquals(1, detail.getParts().get(0).getGroups().get(0).getPassages().size());
@@ -104,6 +115,7 @@ class UserReadingServiceImplTest {
         assertEquals("https://cdn.test/group.png",
                 detail.getParts().get(0).getGroups().get(0).getImages().get(0).getFileUrl());
         assertFalse(detail.getQuestions().isEmpty());
+        assertEquals(formattedQuestionText, detail.getQuestions().get(0).getQuestionText());
         assertNotNull(detail.getQuestions().get(0).getGroupImages());
         assertEquals(1, detail.getQuestions().get(0).getGroupImages().size());
     }
@@ -129,6 +141,7 @@ class UserReadingServiceImplTest {
         when(readingPartGroupService.listAnyByTestId(1L)).thenReturn(List.of(group));
         when(readingQuestionAnswerRuleMapper.findByQuestionId(31L)).thenReturn(List.of());
         when(bizImageResourceService.listByTargets("READING_PART_GROUP", List.of(11L))).thenReturn(Map.of());
+        when(bizImageResourceService.listByTargets("READING_QUESTION", List.of(31L))).thenReturn(Map.of());
         doAnswer(invocation -> {
             ReadingAnswerRecord answerRecord = invocation.getArgument(0);
             savedAnswers.add(answerRecord);
@@ -162,6 +175,36 @@ class UserReadingServiceImplTest {
         verify(readingRecordMapper).updateSessionState(record);
     }
 
+    @Test
+    void getRecord_shouldReturnPassageTitleAndContentForReplay() {
+        UserReadingServiceImpl service = newService();
+        ReadingTest test = test(1L, "Cambridge Reading");
+        TestPartGroup group = group(11L, 1, 1);
+        ReadingPassage passage = passage(21L, 1L, 11L, 1);
+        ReadingQuestion question = question(31L, 21L, 11L, 1, "Paris");
+        ReadingRecord record = record();
+        ReadingAnswerRecord answerRecord = new ReadingAnswerRecord();
+        answerRecord.setQuestionId(31L);
+        answerRecord.setUserAnswer("Paris");
+        answerRecord.setIsCorrect(1);
+        answerRecord.setScore(1);
+
+        when(readingRecordMapper.findAnyByIdForUser(101L, 9L)).thenReturn(record);
+        when(readingTestMapper.findAnyById(1L)).thenReturn(test);
+        when(readingPassageMapper.findAnyByTestId(1L)).thenReturn(List.of(passage));
+        when(readingQuestionMapper.findAnyByPassageId(21L)).thenReturn(List.of(question));
+        when(readingPartGroupService.listAnyByTestId(1L)).thenReturn(List.of(group));
+        when(readingAnswerRecordMapper.findByRecordId(101L)).thenReturn(List.of(answerRecord));
+        when(bizImageResourceService.listByTargets("READING_PART_GROUP", List.of(11L))).thenReturn(Map.of());
+        when(bizImageResourceService.listByTargets("READING_QUESTION", List.of(31L))).thenReturn(Map.of());
+
+        ReadingRecordDetailVO result = service.getRecord(101L, 9L);
+
+        assertEquals("Passage 1", result.getParts().get(0).getGroups().get(0).getPassages().get(0).getTitle());
+        assertEquals("Content", result.getParts().get(0).getGroups().get(0).getPassages().get(0).getContent());
+        assertEquals(1, result.getParts().get(0).getGroups().get(0).getPassages().get(0).getQuestions().size());
+    }
+
     private UserReadingServiceImpl newService() {
         return new UserReadingServiceImpl(
                 readingTestMapper,
@@ -182,6 +225,7 @@ class UserReadingServiceImplTest {
         test.setTitle(title);
         test.setTotalScore(40);
         test.setTimerMode("test_level");
+        test.setPrepSeconds(120);
         test.setTotalSeconds(3600);
         test.setAutoSubmit(1);
         test.setAllowPause(0);

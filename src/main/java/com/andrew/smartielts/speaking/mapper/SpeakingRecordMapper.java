@@ -58,15 +58,7 @@ public interface SpeakingRecordMapper {
 
     Long countAdminActive(@Param("query") AdminSpeakingRecordPageQuery query);
 
-    List<SpeakingRecordVO> pageAdminActive(@Param("query") AdminSpeakingRecordPageQuery query,
-                                           @Param("offset") Integer offset,
-                                           @Param("limit") Integer limit);
-
     Long countAdminDeleted(@Param("query") AdminSpeakingDeletedRecordPageQuery query);
-
-    List<SpeakingRecordVO> pageAdminDeleted(@Param("query") AdminSpeakingDeletedRecordPageQuery query,
-                                            @Param("offset") Integer offset,
-                                            @Param("limit") Integer limit);
 
     List<SpeakingRecord> findRecentAiFailures(@Param("limit") Integer limit);
 

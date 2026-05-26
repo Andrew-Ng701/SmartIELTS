@@ -12,7 +12,10 @@ public final class ListeningAudioConstants {
 
     public static final String TARGET_TYPE_LISTENING_AUDIO = "LISTENING_AUDIO";
     public static final String TARGET_TYPE_LISTENING_PART_GROUP = StorageBizConstants.TARGET_TYPE_LISTENING_PART_GROUP;
+    public static final String TARGET_TYPE_LISTENING_QUESTION = StorageBizConstants.TARGET_TYPE_LISTENING_QUESTION;
 
     public static final String BIZ_PATH_LISTENING_AUDIO = StorageBizConstants.BIZ_PATH_LISTENING_AUDIO;
     public static final String BIZ_PATH_QUESTION_GROUP_IMAGE = StorageBizConstants.BIZ_PATH_QUESTION_GROUP_IMAGE;
+    public static final String BIZ_PATH_LISTENING_PART_GROUP_IMAGE = StorageBizConstants.BIZ_PATH_LISTENING_PART_GROUP_IMAGE;
+    public static final String BIZ_PATH_LISTENING_QUESTION_IMAGE = StorageBizConstants.BIZ_PATH_LISTENING_QUESTION_IMAGE;
 }

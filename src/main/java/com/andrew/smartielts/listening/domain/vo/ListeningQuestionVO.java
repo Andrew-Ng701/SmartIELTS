@@ -28,4 +28,5 @@ public class ListeningQuestionVO {
     private Integer score;
 
     private List<BizImageResourceDTO> groupImages;
+    private List<BizImageResourceDTO> images;
 }

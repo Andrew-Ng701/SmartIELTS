@@ -13,11 +13,12 @@
         <result property="deletedTime" column="deleted_time"/>
         <result property="createdTime" column="created_time"/>
         <result property="lastLoginTime" column="last_login_time"/>
+        <result property="consecutiveLoginDays" column="consecutive_login_days"/>
         <result property="tokenVersion" column="token_version"/>
     </resultMap>
 
     <sql id="Base_Column_List">
-        id, email, password, role, is_deleted, deleted_time, created_time, last_login_time, token_version
+        id, email, password, role, is_deleted, deleted_time, created_time, last_login_time, consecutive_login_days, token_version
     </sql>
 
     <select id="findActiveByEmail" resultMap="UserMap">
@@ -54,9 +55,9 @@
             useGeneratedKeys="true"
             keyProperty="id">
         INSERT INTO sys_user (
-            email, password, role, is_deleted, deleted_time, created_time, last_login_time, token_version
+            email, password, role, is_deleted, deleted_time, created_time, last_login_time, consecutive_login_days, token_version
         ) VALUES (
-                     #{email}, #{password}, #{role}, #{isDeleted}, #{deletedTime}, #{createdTime}, #{lastLoginTime}, #{tokenVersion}
+                     #{email}, #{password}, #{role}, #{isDeleted}, #{deletedTime}, #{createdTime}, #{lastLoginTime}, #{consecutiveLoginDays}, #{tokenVersion}
                  )
     </insert>
 
@@ -67,9 +68,15 @@
           AND is_deleted = 0
     </update>
 
-    <update id="updateLastLoginTimeById">
+    <update id="updateLoginStatsById">
         UPDATE sys_user
-        SET last_login_time = NOW()
+        SET consecutive_login_days = CASE
+                WHEN last_login_time IS NULL THEN 1
+                WHEN DATE(last_login_time) = CURDATE() THEN GREATEST(COALESCE(consecutive_login_days, 0), 1)
+                WHEN DATE(last_login_time) = DATE_SUB(CURDATE(), INTERVAL 1 DAY) THEN COALESCE(consecutive_login_days, 0) + 1
+                ELSE 1
+            END,
+            last_login_time = NOW()
         WHERE id = #{id}
           AND is_deleted = 0
     </update>

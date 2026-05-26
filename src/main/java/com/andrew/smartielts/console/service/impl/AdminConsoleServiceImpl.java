@@ -2,22 +2,22 @@ package com.andrew.smartielts.console.service.impl;
 
 import com.andrew.smartielts.admin.domain.vo.AdminQuickLinkVO;
 import com.andrew.smartielts.admin.domain.vo.AdminRecentIssueVO;
-import com.andrew.smartielts.admin.domain.vo.AdminUserConsoleSummaryVO;
+import com.andrew.smartielts.console.domain.vo.AdminConsoleKpiVO;
+import com.andrew.smartielts.console.domain.vo.AdminConsoleLeaderboardVO;
+import com.andrew.smartielts.console.domain.vo.AdminConsoleModuleStatVO;
+import com.andrew.smartielts.console.domain.vo.AdminConsoleVO;
+import com.andrew.smartielts.console.domain.vo.ConsoleChartSeriesVO;
+import com.andrew.smartielts.console.domain.vo.ConsoleChartVO;
 import com.andrew.smartielts.console.service.AdminConsoleService;
 import com.andrew.smartielts.console.service.LearningConsoleQueryService;
-import com.andrew.smartielts.dashboard.constants.DashboardOverviewConstants;
 import com.andrew.smartielts.dashboard.domain.vo.AdminAiFailureVO;
-import com.andrew.smartielts.dashboard.domain.vo.AdminDashboardOverviewVisualVO;
-import com.andrew.smartielts.dashboard.domain.vo.AdminExecutiveSummaryVO;
 import com.andrew.smartielts.dashboard.domain.vo.AdminModuleStatVO;
+import com.andrew.smartielts.dashboard.domain.vo.AdminOverviewVO;
 import com.andrew.smartielts.dashboard.domain.vo.AdminUserCountVO;
-import com.andrew.smartielts.dashboard.domain.vo.AdminUserRecordSummaryVO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.time.OffsetDateTime;
-import java.util.Arrays;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -26,37 +26,78 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class AdminConsoleServiceImpl implements AdminConsoleService {
 
+    private static final int LEADERBOARD_LIMIT = 10;
+
     private final LearningConsoleQueryService learningConsoleQueryService;
 
     @Override
-    public com.andrew.smartielts.admin.domain.vo.AdminOverviewVO overview() {
-        return toAdminOverview(learningConsoleQueryService.adminOverview(), recentIssues());
+    public AdminConsoleVO console() {
+        AdminOverviewVO overview = learningConsoleQueryService.adminOverview();
+        AdminUserCountVO userStats = learningConsoleQueryService.adminUserCount();
+        List<AdminModuleStatVO> rawModuleStats = safeList(learningConsoleQueryService.adminModuleStats());
+        List<AdminAiFailureVO> aiFailures = safeList(learningConsoleQueryService.adminAiFailureSummary());
+        List<AdminRecentIssueVO> recentIssues = safeList(learningConsoleQueryService.adminRecentIssues());
+        List<AdminConsoleLeaderboardVO> leaderboards =
+                safeList(learningConsoleQueryService.adminUserLeaderboards(LEADERBOARD_LIMIT));
+        List<AdminConsoleModuleStatVO> moduleStats = buildModuleStats(rawModuleStats, aiFailures);
+
+        AdminConsoleVO vo = new AdminConsoleVO();
+        vo.setSnapshotId(UUID.randomUUID().toString());
+        vo.setSnapshotTime(OffsetDateTime.now().toString());
+        vo.setKpis(buildKpis(overview, userStats, aiFailures));
+        vo.setModuleStats(moduleStats);
+        vo.setUserStats(userStats);
+        vo.setRecentIssues(recentIssues);
+        vo.setQuickLinks(quickLinks());
+        vo.setLeaderboards(leaderboards);
+        vo.setCharts(List.of(
+                moduleRecordsBarChart(moduleStats),
+                moduleRecordsDonutChart(moduleStats),
+                aiFailuresBarChart(moduleStats)
+        ));
+        return vo;
     }
 
-    @Override
-    public AdminUserCountVO userCount() {
-        return learningConsoleQueryService.adminUserCount();
+    private AdminConsoleKpiVO buildKpis(AdminOverviewVO overview,
+                                        AdminUserCountVO userStats,
+                                        List<AdminAiFailureVO> aiFailures) {
+        AdminConsoleKpiVO vo = new AdminConsoleKpiVO();
+        long activeRecords = overview == null ? 0L : overview.getTotalActiveRecords();
+        long deletedRecords = overview == null ? 0L : overview.getTotalDeletedRecords();
+        vo.setTotalUsers(userStats == null ? 0L : userStats.getTotalUsers());
+        vo.setActiveUsers(userStats == null ? 0L : userStats.getActiveUsers());
+        vo.setDeletedUsers(userStats == null ? 0L : userStats.getDeletedUsers());
+        vo.setTotalActiveRecords(activeRecords);
+        vo.setTotalDeletedRecords(deletedRecords);
+        vo.setTotalRecords(activeRecords + deletedRecords);
+        vo.setAiFailureCount(aiFailures.stream().mapToLong(AdminAiFailureVO::getFailureCount).sum());
+        return vo;
     }
 
-    @Override
-    public List<com.andrew.smartielts.admin.domain.vo.AdminModuleStatVO> moduleStats() {
-        return learningConsoleQueryService.adminModuleStats().stream()
-                .map(this::toAdminModuleStat)
+    private List<AdminConsoleModuleStatVO> buildModuleStats(List<AdminModuleStatVO> moduleStats,
+                                                            List<AdminAiFailureVO> aiFailures) {
+        return moduleStats.stream()
+                .map(stat -> toModuleStat(stat, aiFailures))
                 .toList();
     }
 
-    @Override
-    public List<AdminAiFailureVO> aiFailureSummary() {
-        return learningConsoleQueryService.adminAiFailureSummary();
+    private AdminConsoleModuleStatVO toModuleStat(AdminModuleStatVO stat, List<AdminAiFailureVO> aiFailures) {
+        AdminConsoleModuleStatVO vo = new AdminConsoleModuleStatVO();
+        String module = stat == null ? null : stat.getModule();
+        long active = stat == null ? 0L : stat.getActiveCount();
+        long deleted = stat == null ? 0L : stat.getDeletedCount();
+        vo.setModule(module);
+        vo.setActiveCount(active);
+        vo.setDeletedCount(deleted);
+        vo.setTotalCount(active + deleted);
+        vo.setAiFailureCount(aiFailures.stream()
+                .filter(item -> item != null && module != null && module.equals(item.getModule()))
+                .mapToLong(AdminAiFailureVO::getFailureCount)
+                .sum());
+        return vo;
     }
 
-    @Override
-    public List<AdminRecentIssueVO> recentIssues() {
-        return learningConsoleQueryService.adminRecentIssues();
-    }
-
-    @Override
-    public List<AdminQuickLinkVO> quickLinks() {
+    private List<AdminQuickLinkVO> quickLinks() {
         return List.of(
                 quickLink("users", "Users", "/admin/users"),
                 quickLink("listening", "Listening Records", "/admin/listening/records"),
@@ -66,130 +107,59 @@ public class AdminConsoleServiceImpl implements AdminConsoleService {
         );
     }
 
-    @Override
-    public AdminUserRecordSummaryVO userRecordSummary(Long targetUserId) {
-        return learningConsoleQueryService.adminUserRecordSummary(targetUserId);
-    }
-
-    @Override
-    public AdminUserConsoleSummaryVO userConsoleSummary(Long userId) {
-        return learningConsoleQueryService.adminUserConsoleSummary(userId);
-    }
-
-    @Override
-    public AdminDashboardOverviewVisualVO overviewVisual(Long operatorUserId, Long targetUserId, String timeRange) {
-        String snapshotId = UUID.randomUUID().toString();
-        String snapshotTime = OffsetDateTime.now().toString();
-        AdminUserRecordSummaryVO overview = learningConsoleQueryService.adminUserRecordSummary(targetUserId);
-        List<AdminModuleStatVO> moduleStats = learningConsoleQueryService.adminModuleStats();
-        Map<String, Object> aggregates = buildAggregates(operatorUserId, targetUserId, timeRange, moduleStats);
-
-        return AdminDashboardOverviewVisualVO.builder()
-                .snapshotId(snapshotId)
-                .snapshotTime(snapshotTime)
-                .overview(overview)
-                .moduleStats(moduleStats)
-                .recentRecords(List.of())
-                .aggregates(aggregates)
-                .moduleBarChart(buildAdminModuleBarChart(moduleStats))
-                .moduleDonutChart(buildAdminModuleDonutChart(moduleStats))
-                .build();
-    }
-
-    @Override
-    public AdminExecutiveSummaryVO summary(Long operatorUserId, Long targetUserId, String timeRange) {
-        AdminUserRecordSummaryVO userSummary = userRecordSummary(targetUserId);
-        String summaryText = "Admin console summary for user " + targetUserId
-                + " in " + normalizeTimeRange(timeRange)
-                + ": active records " + userSummary.getTotalActiveRecords()
-                + ", deleted records " + userSummary.getTotalDeletedRecords()
-                + ", average score " + userSummary.getAverageScore() + ".";
-        Map<String, Object> meta = new LinkedHashMap<>();
-        meta.put("summary_source", "console_deterministic");
-        meta.put("time_range", normalizeTimeRange(timeRange));
-        meta.put("operator_user_id", operatorUserId);
-        meta.put("target_user_id", targetUserId);
-
-        return AdminExecutiveSummaryVO.builder()
-                .snapshotId(UUID.randomUUID().toString())
-                .snapshotTime(OffsetDateTime.now().toString())
-                .summaryType("console_summary")
-                .summaryText(summaryText)
-                .summarySentences(splitSummarySentences(summaryText))
-                .queryUsed(normalizeTimeRange(timeRange))
-                .meta(meta)
-                .build();
-    }
-
-    private com.andrew.smartielts.admin.domain.vo.AdminOverviewVO toAdminOverview(
-            com.andrew.smartielts.dashboard.domain.vo.AdminOverviewVO source,
-            List<AdminRecentIssueVO> recentIssues) {
-        com.andrew.smartielts.admin.domain.vo.AdminOverviewVO target =
-                new com.andrew.smartielts.admin.domain.vo.AdminOverviewVO();
-        target.setTotalUsers(source.getTotalUsers());
-        target.setActiveUsers(source.getActiveUsers());
-        target.setDeletedUsers(source.getDeletedUsers());
-        target.setListeningActiveRecords(source.getListeningActiveRecords());
-        target.setListeningDeletedRecords(source.getListeningDeletedRecords());
-        target.setReadingActiveRecords(source.getReadingActiveRecords());
-        target.setReadingDeletedRecords(source.getReadingDeletedRecords());
-        target.setWritingActiveRecords(source.getWritingActiveRecords());
-        target.setWritingDeletedRecords(source.getWritingDeletedRecords());
-        target.setSpeakingActiveRecords(source.getSpeakingActiveRecords());
-        target.setSpeakingDeletedRecords(source.getSpeakingDeletedRecords());
-        target.setTotalActiveRecords(source.getTotalActiveRecords());
-        target.setTotalDeletedRecords(source.getTotalDeletedRecords());
-        target.setModules(source.getModules().stream().map(this::toAdminModuleStat).toList());
-        target.setRecentAiFailureCount(recentIssues == null ? 0 : recentIssues.size());
-        target.setRecentIssues(recentIssues == null ? List.of() : recentIssues);
-        target.setGeneratedAt(source.getGeneratedAt());
-        return target;
-    }
-
-    private com.andrew.smartielts.admin.domain.vo.AdminModuleStatVO toAdminModuleStat(AdminModuleStatVO source) {
-        com.andrew.smartielts.admin.domain.vo.AdminModuleStatVO target =
-                new com.andrew.smartielts.admin.domain.vo.AdminModuleStatVO();
-        target.setModule(source.getModule());
-        target.setActiveCount(source.getActiveCount());
-        target.setDeletedCount(source.getDeletedCount());
-        target.setTotalCount(source.getActiveCount() + source.getDeletedCount());
-        return target;
-    }
-
-    private Map<String, Object> buildAggregates(Long operatorUserId,
-                                                Long targetUserId,
-                                                String timeRange,
-                                                List<AdminModuleStatVO> moduleStats) {
-        Map<String, Object> map = new LinkedHashMap<>();
-        map.put("page_name", DashboardOverviewConstants.PAGE_NAME_ADMIN_OVERVIEW);
-        map.put("role", DashboardOverviewConstants.ROLE_ADMIN);
-        map.put("operator_user_id", operatorUserId);
-        map.put("target_user_id", targetUserId);
-        map.put("time_range", normalizeTimeRange(timeRange));
-        map.put("module_stat_count", moduleStats == null ? 0 : moduleStats.size());
-        return map;
-    }
-
-    private Map<String, Object> buildAdminModuleBarChart(List<AdminModuleStatVO> moduleStats) {
-        Map<String, Object> map = new LinkedHashMap<>();
-        map.put("chart_type", "bar");
-        map.put("dimension_key", "module");
-        map.put("x_key", "module");
-        map.put("series", Arrays.asList(
-                Map.of("name", "active_count", "field", "activeCount"),
-                Map.of("name", "deleted_count", "field", "deletedCount")
+    private ConsoleChartVO moduleRecordsBarChart(List<AdminConsoleModuleStatVO> moduleStats) {
+        ConsoleChartVO chart = new ConsoleChartVO();
+        chart.setCode("moduleRecordsBar");
+        chart.setTitle("Module records");
+        chart.setChartType("bar");
+        chart.setDimensionKey("module");
+        chart.setXKey("module");
+        chart.setRows(safeList(moduleStats));
+        chart.setSeries(List.of(
+                series("active_count", "activeCount"),
+                series("deleted_count", "deletedCount")
         ));
-        map.put("rows", moduleStats == null ? List.of() : moduleStats);
-        return map;
+        chart.setIndicators(List.of());
+        chart.setValues(List.of());
+        chart.setMeta(Map.of());
+        return chart;
     }
 
-    private Map<String, Object> buildAdminModuleDonutChart(List<AdminModuleStatVO> moduleStats) {
-        Map<String, Object> map = new LinkedHashMap<>();
-        map.put("chart_type", "donut");
-        map.put("dimension_key", "module");
-        map.put("value_formula", "activeCount + deletedCount");
-        map.put("rows", moduleStats == null ? List.of() : moduleStats);
-        return map;
+    private ConsoleChartVO moduleRecordsDonutChart(List<AdminConsoleModuleStatVO> moduleStats) {
+        ConsoleChartVO chart = new ConsoleChartVO();
+        chart.setCode("moduleRecordsDonut");
+        chart.setTitle("Module total records");
+        chart.setChartType("donut");
+        chart.setDimensionKey("module");
+        chart.setRows(safeList(moduleStats));
+        chart.setSeries(List.of(series("total_count", "totalCount")));
+        chart.setIndicators(List.of());
+        chart.setValues(List.of());
+        chart.setMeta(Map.of("value_field", "totalCount"));
+        return chart;
+    }
+
+    private ConsoleChartVO aiFailuresBarChart(List<AdminConsoleModuleStatVO> moduleStats) {
+        ConsoleChartVO chart = new ConsoleChartVO();
+        chart.setCode("aiFailuresBar");
+        chart.setTitle("AI failures by module");
+        chart.setChartType("bar");
+        chart.setDimensionKey("module");
+        chart.setXKey("module");
+        chart.setYKey("aiFailureCount");
+        chart.setRows(safeList(moduleStats));
+        chart.setSeries(List.of(series("ai_failure_count", "aiFailureCount")));
+        chart.setIndicators(List.of());
+        chart.setValues(List.of());
+        chart.setMeta(Map.of());
+        return chart;
+    }
+
+    private ConsoleChartSeriesVO series(String name, String field) {
+        ConsoleChartSeriesVO vo = new ConsoleChartSeriesVO();
+        vo.setName(name);
+        vo.setField(field);
+        return vo;
     }
 
     private AdminQuickLinkVO quickLink(String code, String title, String path) {
@@ -200,19 +170,7 @@ public class AdminConsoleServiceImpl implements AdminConsoleService {
         return vo;
     }
 
-    private String normalizeTimeRange(String timeRange) {
-        return timeRange == null || timeRange.isBlank()
-                ? DashboardOverviewConstants.DEFAULT_TIME_RANGE
-                : timeRange.trim();
-    }
-
-    private List<String> splitSummarySentences(String text) {
-        if (text == null || text.isBlank()) {
-            return List.of();
-        }
-        return Arrays.stream(text.split("[.\\n]+"))
-                .map(String::trim)
-                .filter(s -> !s.isBlank())
-                .toList();
+    private <T> List<T> safeList(List<T> list) {
+        return list == null ? List.of() : list;
     }
 }

@@ -3,6 +3,7 @@ package com.andrew.smartielts.dashboard.query.impl;
 import com.andrew.smartielts.dashboard.agent.answer.DashboardAnswerComposeService;
 import com.andrew.smartielts.dashboard.agent.answer.DashboardAnswerReviewAction;
 import com.andrew.smartielts.dashboard.agent.answer.DashboardAnswerReviewService;
+import com.andrew.smartielts.dashboard.agent.answer.DashboardUserTargetScoreContext;
 import com.andrew.smartielts.dashboard.agent.answer.dto.DashboardAnswerComposeRequest;
 import com.andrew.smartielts.dashboard.agent.answer.dto.DashboardAnswerComposeResult;
 import com.andrew.smartielts.dashboard.agent.answer.dto.DashboardAnswerReviewRequest;
@@ -116,7 +117,8 @@ public class DashboardStructuredAiQueryServiceImpl implements DashboardStructure
                     retriedExecutionResult,
                     retriedReviewResult,
                     true,
-                    startedAt
+                    startedAt,
+                    context
             );
         }
 
@@ -138,7 +140,8 @@ public class DashboardStructuredAiQueryServiceImpl implements DashboardStructure
                 executionResult,
                 reviewResult,
                 false,
-                startedAt
+                startedAt,
+                context
         );
     }
 
@@ -218,7 +221,8 @@ public class DashboardStructuredAiQueryServiceImpl implements DashboardStructure
             DashboardStructuredExecutionResult executionResult,
             DashboardAnswerReviewResult reviewResult,
             boolean retried,
-            long startedAt) {
+            long startedAt,
+            Map<String, Object> context) {
 
         Object reviewed = dashboardSqlGenerationService.reviewAndAnswer(
                 role,
@@ -227,7 +231,8 @@ public class DashboardStructuredAiQueryServiceImpl implements DashboardStructure
                 originalQuery,
                 intent,
                 executionResult.sqlPlan(),
-                executionResult.rows()
+                executionResult.rows(),
+                context
         );
 
         Map<String, Object> reviewedMap = to_string_key_map(reviewed);
@@ -253,6 +258,7 @@ public class DashboardStructuredAiQueryServiceImpl implements DashboardStructure
                                 ? intent.getCapability().name()
                                 : DashboardIntentCapability.STRUCTURED_QUERY.name())
                         .filters(intent != null && intent.getFilters() != null ? intent.getFilters() : Map.of())
+                        .userTargetScores(DashboardUserTargetScoreContext.fromContext(context))
                         .data(reviewedData)
                         .responseLanguage(detect_response_language(originalQuery))
                         .build()
@@ -337,6 +343,9 @@ public class DashboardStructuredAiQueryServiceImpl implements DashboardStructure
 
     private boolean is_generic_sql_answer(String answer) {
         if (is_blank(answer)) {
+            return true;
+        }
+        if (answer.contains("我已完成查詢") && answer.contains("相關資料結果")) {
             return true;
         }
 

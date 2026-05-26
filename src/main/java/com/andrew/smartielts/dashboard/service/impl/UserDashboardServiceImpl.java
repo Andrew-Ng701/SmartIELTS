@@ -8,6 +8,7 @@ import com.andrew.smartielts.dashboard.constants.DashboardOverviewConstants;
 import com.andrew.smartielts.dashboard.controller.dto.DashboardAskPreloadedPayload;
 import com.andrew.smartielts.dashboard.domain.vo.UserExecutiveSummaryVO;
 import com.andrew.smartielts.dashboard.preload.DashboardPreloadService;
+import com.andrew.smartielts.dashboard.service.DashboardExecutiveSummaryCacheService;
 import com.andrew.smartielts.dashboard.service.UserDashboardService;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -24,12 +25,35 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class UserDashboardServiceImpl implements UserDashboardService {
 
+    private static final long EXECUTIVE_SUMMARY_CACHE_TTL_MILLIS = 12 * 60 * 60 * 1000L;
+    private static final String SUMMARY_SOURCE_CACHE = "executive_summary_cache";
+    private static final String SUMMARY_SOURCE_COMPOSE = "preloaded_payload_compose";
+
     private final ObjectProvider<DashboardPreloadService> dashboardPreloadServiceProvider;
     private final ObjectMapper objectMapper;
     private final DashboardAnswerComposeService dashboardAnswerComposeService;
+    private final DashboardExecutiveSummaryCacheService dashboardExecutiveSummaryCacheService;
 
     @Override
     public UserExecutiveSummaryVO userExecutiveSummary(Long userId, String timeRange) {
+        return userExecutiveSummary(userId, timeRange, null);
+    }
+
+    @Override
+    public UserExecutiveSummaryVO userExecutiveSummary(Long userId, String timeRange, String summaryCacheKey) {
+        String cacheKey = buildSummaryCacheKey(
+                DashboardOverviewConstants.ROLE_USER,
+                userId,
+                userId,
+                timeRange,
+                summaryCacheKey
+        );
+        UserExecutiveSummaryVO cached = dashboardExecutiveSummaryCacheService.get(cacheKey, UserExecutiveSummaryVO.class);
+        if (cached != null) {
+            markCacheHit(cached.getMeta(), true);
+            return cached;
+        }
+
         DashboardAskPreloadedPayload payload = loadUserOverviewPayload(userId, timeRange);
         String query = DashboardExecutiveSummaryQueryConstants.USER_EXECUTIVE_SUMMARY_DEFAULT_QUERY;
         String summaryText = composeExecutiveSummary(
@@ -47,13 +71,17 @@ public class UserDashboardServiceImpl implements UserDashboardService {
         }
 
         Map<String, Object> meta = new LinkedHashMap<>();
-        meta.put("summary_source", "preloaded_payload_compose");
+        meta.put("summary_source", SUMMARY_SOURCE_COMPOSE);
+        meta.put("summary_cache_enabled", true);
+        meta.put("summary_cache_hit", false);
+        meta.put("summary_cache_key", safeCacheKey(summaryCacheKey));
+        meta.put("summary_cache_scope_key", cacheKey);
         meta.put("time_range", normalizeTimeRange(timeRange));
         meta.put("has_progress_summary", payload.getProgressSummary() != null);
         meta.put("module_stat_count", payload.getModuleStats() == null ? 0 : payload.getModuleStats().size());
         meta.put("recent_record_count", payload.getRecentRecords() == null ? 0 : payload.getRecentRecords().size());
 
-        return UserExecutiveSummaryVO.builder()
+        UserExecutiveSummaryVO result = UserExecutiveSummaryVO.builder()
                 .snapshotId(payload.getSnapshotId())
                 .snapshotTime(payload.getSnapshotTime())
                 .summaryType(DashboardOverviewConstants.SUMMARY_TYPE_AI)
@@ -62,6 +90,8 @@ public class UserDashboardServiceImpl implements UserDashboardService {
                 .queryUsed(query)
                 .meta(meta)
                 .build();
+        dashboardExecutiveSummaryCacheService.put(cacheKey, result, EXECUTIVE_SUMMARY_CACHE_TTL_MILLIS);
+        return result;
     }
 
     private DashboardAskPreloadedPayload loadUserOverviewPayload(Long userId, String timeRange) {
@@ -103,7 +133,8 @@ public class UserDashboardServiceImpl implements UserDashboardService {
         Map<String, Object> filters = new LinkedHashMap<>();
         filters.put("pageName", pageName);
         filters.put("summaryType", "executive_summary");
-        filters.put("tone", "warm_teacher");
+        filters.put("tone", "concise_teacher");
+        filters.put("outputStyle", "2-3 short English sentences");
         filters.put("timeRange", normalizeTimeRange(timeRange));
 
         DashboardAnswerComposeResult result = dashboardAnswerComposeService.compose(
@@ -115,7 +146,7 @@ public class UserDashboardServiceImpl implements UserDashboardService {
                         .capability("PRELOADED_DIRECT")
                         .filters(filters)
                         .data(data)
-                        .responseLanguage(DashboardOverviewConstants.RESPONSE_LANGUAGE_ZH_HANT)
+                        .responseLanguage(DashboardOverviewConstants.RESPONSE_LANGUAGE_EN)
                         .build()
         );
         return result == null || result.getAnswer() == null ? null : result.getAnswer().trim();
@@ -204,6 +235,36 @@ public class UserDashboardServiceImpl implements UserDashboardService {
 
     private String normalizeTimeRange(String timeRange) {
         return hasText(timeRange) ? timeRange.trim() : DashboardOverviewConstants.DEFAULT_TIME_RANGE;
+    }
+
+    private String buildSummaryCacheKey(String role,
+                                        Long operatorUserId,
+                                        Long targetUserId,
+                                        String timeRange,
+                                        String summaryCacheKey) {
+        return String.join(":",
+                safeKey(role),
+                String.valueOf(operatorUserId),
+                String.valueOf(targetUserId),
+                safeKey(normalizeTimeRange(timeRange)),
+                safeKey(summaryCacheKey)
+        );
+    }
+
+    private String safeCacheKey(String summaryCacheKey) {
+        return hasText(summaryCacheKey) ? summaryCacheKey.trim() : null;
+    }
+
+    private String safeKey(String value) {
+        return hasText(value) ? value.trim().toLowerCase().replaceAll("[^a-z0-9._-]", "_") : "default";
+    }
+
+    private void markCacheHit(Map<String, Object> meta, boolean cacheHit) {
+        if (meta == null) {
+            return;
+        }
+        meta.put("summary_source", SUMMARY_SOURCE_CACHE);
+        meta.put("summary_cache_hit", cacheHit);
     }
 
     private List<String> splitSummarySentences(String text) {

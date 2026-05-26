@@ -24,10 +24,22 @@ public final class DashboardSqlPromptTemplates {
             role: %s
             operatorUserId: %s
             targetUserId: %s
+            responseLanguage: %s
             originalQuery: %s
             intentJson: %s
             sqlPlanJson: %s
             rowsJson: %s
+            userTargetScoresJson: %s
+
+            Suggestion rules:
+            - Suggestions are recommended follow-up questions/actions shown to the user after the answer.
+            - Write suggestions from the user's point of view.
+            - For English suggestions, use "my" or "I"; do not use "you" or "your".
+            - Example: "View my 30-day trend to track my progress over time".
+            - Follow responseLanguage exactly.
+            - For USER answers, if userTargetScoresJson contains any non-null score, explicitly relate the answer to the user's IELTS targets.
+            - If the answer focuses on one IELTS module, mention that module's target; otherwise mention the four-module target context briefly.
+            - Do not invent missing target scores. If a target score is null or blank, do not state a numeric value for it.
 
             Return JSON only.
             """;

@@ -2,13 +2,10 @@ package com.andrew.smartielts.speaking.controller.admin;
 
 import com.andrew.smartielts.common.resultDTO.Result;
 import com.andrew.smartielts.speaking.domain.pojo.SpeakingQuestion;
-import com.andrew.smartielts.speaking.domain.query.admin.AdminSpeakingDeletedRecordPageQuery;
-import com.andrew.smartielts.speaking.domain.query.admin.AdminSpeakingRecordPageQuery;
 import com.andrew.smartielts.speaking.service.admin.AdminSpeakingService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -35,7 +32,7 @@ public class AdminSpeakingController {
         return Result.success(speakingService.listAllSpeakingQuestion());
     }
 
-    @Operation(summary = "Get speaking question detail")
+    @Operation(summary = "Get speaking question")
     @GetMapping("/questions/{id}")
     public Result<?> getSpeakingQuestion(@PathVariable Long id) {
         return Result.success(speakingService.getSpeakingQuestion(id));
@@ -61,35 +58,4 @@ public class AdminSpeakingController {
         return Result.success();
     }
 
-    @Operation(summary = "Admin speaking active records overview")
-    @PostMapping("/records/overview")
-    public Result<?> pageActiveRecords(@Valid @RequestBody AdminSpeakingRecordPageQuery query) {
-        return Result.success(speakingService.pageActiveRecords(query));
-    }
-
-    @Operation(summary = "Admin speaking deleted records overview")
-    @PostMapping("/records/deleted/overview")
-    public Result<?> pageDeletedRecords(@Valid @RequestBody AdminSpeakingDeletedRecordPageQuery query) {
-        return Result.success(speakingService.pageDeletedRecords(query));
-    }
-
-    @Operation(summary = "Get speaking record detail")
-    @GetMapping("/records/{recordId}")
-    public Result<?> getRecord(@PathVariable Long recordId) {
-        return Result.success(speakingService.getRecord(recordId));
-    }
-
-    @Operation(summary = "Delete speaking record")
-    @DeleteMapping("/records/{recordId}")
-    public Result<?> deleteRecord(@PathVariable Long recordId) {
-        speakingService.deleteRecord(recordId);
-        return Result.success();
-    }
-
-    @Operation(summary = "Restore speaking record")
-    @PutMapping("/records/{recordId}/restore")
-    public Result<?> restoreRecord(@PathVariable Long recordId) {
-        speakingService.restoreRecord(recordId);
-        return Result.success();
-    }
 }

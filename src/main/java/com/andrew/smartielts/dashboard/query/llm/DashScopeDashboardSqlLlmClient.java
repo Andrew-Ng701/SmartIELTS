@@ -134,7 +134,8 @@ public class DashScopeDashboardSqlLlmClient implements DashboardSqlLlmClient {
                 safeString(request.getOriginalQuery()),
                 toJson(request.getIntent() == null ? Map.of() : request.getIntent()),
                 toJson(request.getSqlPlan() == null ? Map.of() : request.getSqlPlan()),
-                toJson(request.getRows() == null ? List.of() : request.getRows())
+                toJson(request.getRows() == null ? List.of() : request.getRows()),
+                toJson(request.getUserTargetScores() == null ? Map.of() : request.getUserTargetScores())
         );
     }
 
@@ -152,7 +153,7 @@ public class DashScopeDashboardSqlLlmClient implements DashboardSqlLlmClient {
     private ResponseFormat buildSqlReviewResponseFormat() {
         JsonSchema jsonSchema = new JsonSchema();
         jsonSchema.setName(DashboardSqlResponseFormatConstants.SQL_REVIEW_SCHEMA_NAME);
-        jsonSchema.setSchema(readSchemaAsMap(DashboardSqlSchemaConstants.DASHSCOPE_SQL_GENERATION_JSON_SCHEMA));
+        jsonSchema.setSchema(readSchemaAsMap(DashboardSqlSchemaConstants.DASHSCOPE_SQL_REVIEW_JSON_SCHEMA));
 
         ResponseFormat responseFormat = new ResponseFormat();
         responseFormat.setType(DashboardSqlResponseFormatConstants.RESPONSE_FORMAT_TYPE);

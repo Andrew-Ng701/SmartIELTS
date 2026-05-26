@@ -14,7 +14,10 @@ public class ListeningTestDetailVO {
     private Integer totalScore;
 
     private String timerMode;
+    private Integer prepSeconds;
     private Integer totalSeconds;
+    private Integer prepMinutes;
+    private Integer totalMinutes;
     private Integer autoSubmit;
     private Integer allowPause;
     private Integer allowAudioSeek;

@@ -3,8 +3,6 @@ package com.andrew.smartielts.speaking.controller.user;
 import com.andrew.smartielts.common.resultDTO.Result;
 import com.andrew.smartielts.speaking.domain.dto.NextQuestionRequestDTO;
 import com.andrew.smartielts.speaking.domain.dto.StartExamRequestDTO;
-import com.andrew.smartielts.speaking.domain.query.user.UserSpeakingDeletedRecordPageQuery;
-import com.andrew.smartielts.speaking.domain.query.user.UserSpeakingRecordPageQuery;
 import com.andrew.smartielts.speaking.domain.vo.UploadSpeakingAudioVO;
 import com.andrew.smartielts.speaking.oss.service.SpeakingAudioStorageService;
 import com.andrew.smartielts.speaking.service.user.UserSpeakingService;
@@ -12,7 +10,6 @@ import com.andrew.smartielts.utils.SecurityUtils;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.validation.Valid;
 import org.springframework.http.MediaType;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -42,12 +39,6 @@ public class UserSpeakingController {
         return Result.success(speakingService.listAllSpeakingQuestion());
     }
 
-    @Operation(summary = "Get speaking question detail")
-    @GetMapping("/questions/{id}")
-    public Result<?> getSpeakingQuestion(@PathVariable Long id) {
-        return Result.success(speakingService.getSpeakingQuestion(id));
-    }
-
     @Operation(summary = "Start speaking exam")
     @PostMapping("/start-exam")
     public Result<?> startExam(@RequestBody(required = false) StartExamRequestDTO dto) {
@@ -68,43 +59,6 @@ public class UserSpeakingController {
             @RequestPart("file") MultipartFile file
     ) {
         return Result.success(speakingService.submitAnswer(sessionId, questionId, file));
-    }
-
-    @Operation(summary = "User speaking active records overview")
-    @PostMapping("/records/overview")
-    public Result<?> pageActiveRecords(@Valid @RequestBody UserSpeakingRecordPageQuery query) {
-        Long userId = SecurityUtils.getCurrentUserId();
-        return Result.success(speakingService.pageActiveRecords(userId, query));
-    }
-
-    @Operation(summary = "User speaking deleted records overview")
-    @PostMapping("/records/deleted/overview")
-    public Result<?> pageDeletedRecords(@Valid @RequestBody UserSpeakingDeletedRecordPageQuery query) {
-        Long userId = SecurityUtils.getCurrentUserId();
-        return Result.success(speakingService.pageDeletedRecords(userId, query));
-    }
-
-    @Operation(summary = "Get speaking record detail")
-    @GetMapping("/records/{recordId}")
-    public Result<?> getRecord(@PathVariable Long recordId) {
-        Long userId = SecurityUtils.getCurrentUserId();
-        return Result.success(speakingService.getRecord(recordId, userId));
-    }
-
-    @Operation(summary = "Delete my speaking record")
-    @DeleteMapping("/records/{recordId}")
-    public Result<?> deleteRecord(@PathVariable Long recordId) {
-        Long userId = SecurityUtils.getCurrentUserId();
-        speakingService.deleteRecord(recordId, userId);
-        return Result.success();
-    }
-
-    @Operation(summary = "Restore my speaking record")
-    @PutMapping("/records/{recordId}/restore")
-    public Result<?> restoreRecord(@PathVariable Long recordId) {
-        Long userId = SecurityUtils.getCurrentUserId();
-        speakingService.restoreRecord(recordId, userId);
-        return Result.success();
     }
 
     @Operation(summary = "Get speaking session summary")

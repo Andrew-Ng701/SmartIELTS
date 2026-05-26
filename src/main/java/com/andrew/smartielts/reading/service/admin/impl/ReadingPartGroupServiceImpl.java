@@ -4,6 +4,7 @@ import com.andrew.smartielts.common.domain.pojo.TestPartGroup;
 import com.andrew.smartielts.reading.constant.ReadingQuestionConstants;
 import com.andrew.smartielts.reading.mapper.ReadingPartGroupMapper;
 import com.andrew.smartielts.reading.service.admin.ReadingPartGroupService;
+import com.andrew.smartielts.reading.support.ReadingMatchingAnswerBankSupport;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -20,16 +21,18 @@ public class ReadingPartGroupServiceImpl implements ReadingPartGroupService {
     private static final Set<String> SUPPORTED_QUESTION_TYPES = Set.of(
             ReadingQuestionConstants.QUESTION_TYPE_MULTIPLE_CHOICE_SINGLE,
             ReadingQuestionConstants.QUESTION_TYPE_MULTIPLE_CHOICE_MULTI,
+            ReadingQuestionConstants.QUESTION_TYPE_MULTIPLE_CHOICE,
             ReadingQuestionConstants.QUESTION_TYPE_TRUE_FALSE_NOT_GIVEN,
             ReadingQuestionConstants.QUESTION_TYPE_YES_NO_NOT_GIVEN,
             ReadingQuestionConstants.QUESTION_TYPE_MATCHING,
-            ReadingQuestionConstants.QUESTION_TYPE_HEADING_MATCHING,
             ReadingQuestionConstants.QUESTION_TYPE_SUMMARY_COMPLETION,
             ReadingQuestionConstants.QUESTION_TYPE_SENTENCE_COMPLETION,
             ReadingQuestionConstants.QUESTION_TYPE_SHORT_ANSWER,
             ReadingQuestionConstants.QUESTION_TYPE_TABLE_COMPLETION,
             ReadingQuestionConstants.QUESTION_TYPE_FLOW_CHART_COMPLETION,
-            ReadingQuestionConstants.QUESTION_TYPE_DIAGRAM_LABEL_COMPLETION
+            ReadingQuestionConstants.QUESTION_TYPE_DIAGRAM_LABEL_COMPLETION,
+            ReadingQuestionConstants.QUESTION_TYPE_FORM_COMPLETION,
+            ReadingQuestionConstants.QUESTION_TYPE_NOTE_COMPLETION
     );
 
     private static final Set<String> SUPPORTED_ANSWER_MODES = Set.of(
@@ -167,7 +170,6 @@ public class ReadingPartGroupServiceImpl implements ReadingPartGroupService {
         partGroup.setInstructionText(trimToNull(partGroup.getInstructionText()));
         partGroup.setGroupGuideText(trimToNull(partGroup.getGroupGuideText()));
         partGroup.setGroupRequirementText(trimToNull(partGroup.getGroupRequirementText()));
-        partGroup.setOptionsJson(trimToNull(partGroup.getOptionsJson()));
         partGroup.setAcceptedAnswersJson(trimToNull(partGroup.getAcceptedAnswersJson()));
         partGroup.setAnswerRulesJson(trimToNull(partGroup.getAnswerRulesJson()));
 
@@ -189,6 +191,7 @@ public class ReadingPartGroupServiceImpl implements ReadingPartGroupService {
             throw new RuntimeException("unsupported_group_question_type");
         }
         partGroup.setQuestionType(questionType);
+        partGroup.setOptionsJson(ReadingMatchingAnswerBankSupport.normalizeOptionsJson(questionType, partGroup.getOptionsJson()));
 
         String answerMode = trimToNull(partGroup.getAnswerMode());
         if (answerMode != null || questionType != null) {

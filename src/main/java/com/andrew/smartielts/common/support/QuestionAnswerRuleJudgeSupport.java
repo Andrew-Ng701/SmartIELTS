@@ -41,15 +41,22 @@ public class QuestionAnswerRuleJudgeSupport {
         String normalized_answer_mode = ReadingQuestionConstants.normalize_answer_mode(answer_mode);
 
         boolean correct;
+        int earned_score;
         if (rules != null && !rules.isEmpty()) {
             correct = judge_by_rules(safe_raw_answers, rules, options);
+            earned_score = correct ? safe_score(question_score) : 0;
         } else if (ReadingQuestionConstants.is_multi_answer_mode(normalized_answer_mode)) {
-            correct = match_multi(correct_answer, accepted_answers_json, safe_raw_answers, options);
+            MultiAnswerScore multi_score = score_multi(correct_answer, accepted_answers_json, safe_raw_answers, options);
+            correct = multi_score.isFullyCorrect();
+            earned_score = multi_score.getEarnedScore();
+        } else if (ReadingQuestionConstants.ANSWER_MODE_SINGLE.equals(normalized_answer_mode)) {
+            correct = match_single_choice(correct_answer, accepted_answers_json, safe_raw_answers, options);
+            earned_score = correct ? safe_score(question_score) : 0;
         } else {
             correct = match_single_or_text(correct_answer, accepted_answers_json, first_answer(safe_raw_answers), options);
+            earned_score = correct ? safe_score(question_score) : 0;
         }
 
-        int earned_score = correct ? safe_score(question_score) : 0;
         String stored_user_answer = build_stored_user_answer(safe_raw_answers);
         String normalized_user_answer = build_stored_normalized_answer(safe_raw_answers, options, normalized_answer_mode);
         String raw_answers_json = to_json_array(safe_raw_answers);
@@ -100,6 +107,7 @@ public class QuestionAnswerRuleJudgeSupport {
                             trim_to_null(rule.getAnswerText())
                     ))
                     .filter(Objects::nonNull)
+                    .flatMap(candidate -> split_accepted_answer_text(candidate).stream())
                     .map(candidate -> normalize(candidate, options))
                     .filter(candidate -> !candidate.isBlank())
                     .anyMatch(normalized_user::equals);
@@ -110,6 +118,31 @@ public class QuestionAnswerRuleJudgeSupport {
         }
 
         return true;
+    }
+
+    private boolean match_single_choice(String correct_answer,
+                                        String accepted_answers_json,
+                                        List<String> user_answers,
+                                        JudgeOptions options) {
+        List<String> normalized_user = normalize_distinct_list(user_answers, options);
+        if (normalized_user.isEmpty()) {
+            return false;
+        }
+
+        List<List<String>> candidate_groups = parse_accepted_answer_groups(accepted_answers_json);
+        if (candidate_groups.isEmpty()) {
+            candidate_groups = new ArrayList<>();
+            candidate_groups.add(parse_csv(correct_answer));
+        }
+
+        for (List<String> group : candidate_groups) {
+            List<String> normalized_group = normalize_distinct_list(group, options);
+            if (!normalized_group.isEmpty() && same_answer_set(normalized_user, normalized_group)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private boolean match_single_or_text(String correct_answer,
@@ -124,7 +157,7 @@ public class QuestionAnswerRuleJudgeSupport {
         List<String> candidates = new ArrayList<>();
         String correct_value = trim_to_null(correct_answer);
         if (correct_value != null) {
-            candidates.add(correct_value);
+            candidates.addAll(split_accepted_answer_text(correct_value));
         }
         candidates.addAll(parse_accepted_answer_list(accepted_answers_json));
 
@@ -134,29 +167,55 @@ public class QuestionAnswerRuleJudgeSupport {
                 .anyMatch(normalized_user::equals);
     }
 
-    private boolean match_multi(String correct_answer,
-                                String accepted_answers_json,
-                                List<String> user_answers,
-                                JudgeOptions options) {
-        List<String> normalized_user = normalize_list(user_answers, options);
-        if (normalized_user.isEmpty()) {
-            return false;
-        }
-
+    private MultiAnswerScore score_multi(String correct_answer,
+                                         String accepted_answers_json,
+                                         List<String> user_answers,
+                                         JudgeOptions options) {
+        List<String> normalized_user = normalize_distinct_list(user_answers, options);
         List<List<String>> candidate_groups = parse_accepted_answer_groups(accepted_answers_json);
         if (candidate_groups.isEmpty()) {
             candidate_groups = new ArrayList<>();
             candidate_groups.add(parse_csv(correct_answer));
         }
 
+        MultiAnswerScore best_score = MultiAnswerScore.empty();
         for (List<String> group : candidate_groups) {
-            List<String> normalized_group = normalize_list(group, options);
-            if (normalized_user.equals(normalized_group)) {
-                return true;
+            List<String> normalized_group = normalize_distinct_list(group, options);
+            if (normalized_group.isEmpty()) {
+                continue;
+            }
+
+            int earned_score = 0;
+            for (String user_answer : normalized_user) {
+                if (normalized_group.contains(user_answer)) {
+                    earned_score++;
+                }
+            }
+
+            boolean fully_correct = !normalized_user.isEmpty() && same_answer_set(normalized_user, normalized_group);
+            MultiAnswerScore current_score = new MultiAnswerScore(fully_correct, earned_score);
+            if (current_score.betterThan(best_score)) {
+                best_score = current_score;
             }
         }
 
-        return false;
+        return best_score;
+    }
+
+    private boolean same_answer_set(List<String> first, List<String> second) {
+        if (first == null || second == null || first.size() != second.size()) {
+            return false;
+        }
+        return first.containsAll(second) && second.containsAll(first);
+    }
+
+    private List<String> normalize_distinct_list(List<String> values, JudgeOptions options) {
+        List<String> normalized = normalize_list(values, options);
+        if (normalized.isEmpty()) {
+            return normalized;
+        }
+
+        return distinct_preserve_order(normalized);
     }
 
     private String build_stored_user_answer(List<String> raw_answers) {
@@ -292,34 +351,30 @@ public class QuestionAnswerRuleJudgeSupport {
             JsonNode root = objectMapper.readTree(json);
             List<String> result = new ArrayList<>();
 
-            if (root.isArray()) {
-                for (JsonNode node : root) {
-                    if (node == null || node.isNull()) {
-                        continue;
-                    }
+            if (!root.isArray()) {
+                return split_accepted_answer_text(json);
+            }
 
-                    if (node.isArray()) {
-                        for (JsonNode child : node) {
-                            if (child == null || child.isNull()) {
-                                continue;
-                            }
-                            String value = trim_to_null(child.asText(null));
-                            if (value != null) {
-                                result.add(value);
-                            }
+            for (JsonNode node : root) {
+                if (node == null || node.isNull()) {
+                    continue;
+                }
+
+                if (node.isArray()) {
+                    for (JsonNode child : node) {
+                        if (child == null || child.isNull()) {
+                            continue;
                         }
-                    } else {
-                        String value = trim_to_null(node.asText(null));
-                        if (value != null) {
-                            result.add(value);
-                        }
+                        result.addAll(split_accepted_answer_text(child.asText(null)));
                     }
+                } else {
+                    result.addAll(split_accepted_answer_text(node.asText(null)));
                 }
             }
 
             return distinct_preserve_order(result);
         } catch (Exception e) {
-            return new ArrayList<>();
+            return split_accepted_answer_text(json);
         }
     }
 
@@ -333,7 +388,8 @@ public class QuestionAnswerRuleJudgeSupport {
             List<List<String>> result = new ArrayList<>();
 
             if (!root.isArray()) {
-                return result;
+                List<String> fallback = split_accepted_answer_text(json);
+                return fallback.isEmpty() ? result : List.of(fallback);
             }
 
             boolean nested_array_found = false;
@@ -350,10 +406,7 @@ public class QuestionAnswerRuleJudgeSupport {
                     if (node == null || node.isNull()) {
                         continue;
                     }
-                    String value = trim_to_null(node.asText(null));
-                    if (value != null) {
-                        single_group.add(value);
-                    }
+                    single_group.addAll(split_accepted_answer_text(node.asText(null)));
                 }
                 if (!single_group.isEmpty()) {
                     result.add(single_group);
@@ -371,10 +424,7 @@ public class QuestionAnswerRuleJudgeSupport {
                     if (child == null || child.isNull()) {
                         continue;
                     }
-                    String value = trim_to_null(child.asText(null));
-                    if (value != null) {
-                        group.add(value);
-                    }
+                    group.addAll(split_accepted_answer_text(child.asText(null)));
                 }
 
                 if (!group.isEmpty()) {
@@ -384,11 +434,16 @@ public class QuestionAnswerRuleJudgeSupport {
 
             return result;
         } catch (Exception e) {
-            return new ArrayList<>();
+            List<String> fallback = split_accepted_answer_text(json);
+            return fallback.isEmpty() ? new ArrayList<>() : List.of(fallback);
         }
     }
 
     private List<String> parse_csv(String value) {
+        return split_accepted_answer_text(value);
+    }
+
+    private List<String> split_accepted_answer_text(String value) {
         String text = trim_to_null(value);
         if (text == null) {
             return new ArrayList<>();
@@ -524,6 +579,38 @@ public class QuestionAnswerRuleJudgeSupport {
 
         public String getDisplayCorrectAnswer() {
             return displayCorrectAnswer;
+        }
+    }
+
+    private static class MultiAnswerScore {
+        private final boolean fullyCorrect;
+        private final int earnedScore;
+
+        private MultiAnswerScore(boolean fullyCorrect, int earnedScore) {
+            this.fullyCorrect = fullyCorrect;
+            this.earnedScore = Math.max(earnedScore, 0);
+        }
+
+        private static MultiAnswerScore empty() {
+            return new MultiAnswerScore(false, 0);
+        }
+
+        private boolean isFullyCorrect() {
+            return fullyCorrect;
+        }
+
+        private int getEarnedScore() {
+            return earnedScore;
+        }
+
+        private boolean betterThan(MultiAnswerScore other) {
+            if (other == null) {
+                return true;
+            }
+            if (earnedScore != other.earnedScore) {
+                return earnedScore > other.earnedScore;
+            }
+            return fullyCorrect && !other.fullyCorrect;
         }
     }
 }

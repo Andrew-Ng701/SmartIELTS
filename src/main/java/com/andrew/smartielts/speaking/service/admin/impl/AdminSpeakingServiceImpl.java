@@ -1,10 +1,7 @@
 package com.andrew.smartielts.speaking.service.admin.impl;
 
-import com.andrew.smartielts.common.page.PageResult;
 import com.andrew.smartielts.speaking.domain.pojo.SpeakingQuestion;
 import com.andrew.smartielts.speaking.domain.pojo.SpeakingRecord;
-import com.andrew.smartielts.speaking.domain.query.admin.AdminSpeakingDeletedRecordPageQuery;
-import com.andrew.smartielts.speaking.domain.query.admin.AdminSpeakingRecordPageQuery;
 import com.andrew.smartielts.speaking.domain.vo.SpeakingRecordDetailVO;
 import com.andrew.smartielts.speaking.domain.vo.SpeakingRecordVO;
 import com.andrew.smartielts.speaking.mapper.SpeakingMapper;
@@ -54,7 +51,7 @@ public class AdminSpeakingServiceImpl implements AdminSpeakingService {
 
     @Override
     public SpeakingQuestion getSpeakingQuestion(Long id) {
-        SpeakingQuestion question = speakingMapper.findById(id);
+        SpeakingQuestion question = speakingMapper.findAnyById(id);
         if (question == null) {
             throw new RuntimeException("Speaking question not found");
         }
@@ -104,48 +101,14 @@ public class AdminSpeakingServiceImpl implements AdminSpeakingService {
     }
 
     @Override
-    public PageResult<SpeakingRecordVO> pageActiveRecords(AdminSpeakingRecordPageQuery query) {
-        AdminSpeakingRecordPageQuery safeQuery =
-                query == null ? new AdminSpeakingRecordPageQuery() : query;
-
-        int pageNum = normalizePageNum(safeQuery.getPageNum());
-        int pageSize = normalizePageSize(safeQuery.getPageSize());
-        int offset = (pageNum - 1) * pageSize;
-
-        Long total = speakingRecordMapper.countAdminActive(safeQuery);
-        if (total == null || total == 0L) {
-            return new PageResult<>(new ArrayList<>(), 0L, pageNum, pageSize);
-        }
-
-        List<SpeakingRecordVO> records = speakingRecordMapper.pageAdminActive(safeQuery, offset, pageSize);
-        return new PageResult<>(records, total, pageNum, pageSize);
-    }
-
-    @Override
-    public PageResult<SpeakingRecordVO> pageDeletedRecords(AdminSpeakingDeletedRecordPageQuery query) {
-        AdminSpeakingDeletedRecordPageQuery safeQuery =
-                query == null ? new AdminSpeakingDeletedRecordPageQuery() : query;
-
-        int pageNum = normalizePageNum(safeQuery.getPageNum());
-        int pageSize = normalizePageSize(safeQuery.getPageSize());
-        int offset = (pageNum - 1) * pageSize;
-
-        Long total = speakingRecordMapper.countAdminDeleted(safeQuery);
-        if (total == null || total == 0L) {
-            return new PageResult<>(new ArrayList<>(), 0L, pageNum, pageSize);
-        }
-
-        List<SpeakingRecordVO> records = speakingRecordMapper.pageAdminDeleted(safeQuery, offset, pageSize);
-        return new PageResult<>(records, total, pageNum, pageSize);
-    }
-
-    @Override
     public SpeakingRecordDetailVO getRecord(Long recordId) {
         SpeakingRecord record = speakingRecordMapper.findAnyById(recordId);
         if (record == null) {
             throw new RuntimeException("Speaking record not found");
         }
-        return toRecordDetailVO(record);
+        SpeakingRecordDetailVO detail = toRecordDetailVO(record);
+        detail.setSessionRecords(toSessionRecordVOs(record.getSessionId()));
+        return detail;
     }
 
     @Override
@@ -177,6 +140,7 @@ public class AdminSpeakingServiceImpl implements AdminSpeakingService {
         SpeakingQuestion question = findQuestionIncludingDeleted(record.getQuestionId());
         vo.setPart(question == null ? null : question.getPart());
         vo.setQuestionText(question == null ? null : question.getQuestionText());
+        vo.setPrompt(question == null ? null : question.getQuestionText());
 
         vo.setFluencyAndCoherence(record.getFluencyAndCoherence());
         vo.setLexicalResource(record.getLexicalResource());
@@ -204,6 +168,7 @@ public class AdminSpeakingServiceImpl implements AdminSpeakingService {
         SpeakingQuestion question = findQuestionIncludingDeleted(record.getQuestionId());
         vo.setPart(question == null ? null : question.getPart());
         vo.setQuestionText(question == null ? null : question.getQuestionText());
+        vo.setPrompt(question == null ? null : question.getQuestionText());
         vo.setCueCard(question == null ? null : question.getCueCard());
 
         vo.setAudioUrl(record.getAudioUrl());
@@ -228,6 +193,29 @@ public class AdminSpeakingServiceImpl implements AdminSpeakingService {
         return vo;
     }
 
+    private List<SpeakingRecordVO> toSessionRecordVOs(String sessionId) {
+        if (sessionId == null || sessionId.isBlank()) {
+            return new ArrayList<>();
+        }
+        List<SpeakingRecord> records = speakingRecordMapper.findBySessionId(sessionId);
+        if (records == null || records.isEmpty()) {
+            return new ArrayList<>();
+        }
+        List<SpeakingRecordVO> vos = new ArrayList<>();
+        for (SpeakingRecord sessionRecord : records) {
+            SpeakingRecordVO vo = toRecordVO(sessionRecord);
+            SpeakingQuestion question = findQuestionIncludingDeleted(sessionRecord.getQuestionId());
+            vo.setPrompt(question == null ? null : question.getQuestionText());
+            vo.setCueCard(question == null ? null : question.getCueCard());
+            vo.setAudioUrl(sessionRecord.getAudioUrl());
+            vo.setTranscript(sessionRecord.getTranscript());
+            vo.setRelevanceComment(sessionRecord.getRelevanceComment());
+            vo.setQualityComment(sessionRecord.getQualityComment());
+            vos.add(vo);
+        }
+        return vos;
+    }
+
     private SpeakingQuestion findQuestionIncludingDeleted(Long questionId) {
         if (questionId == null) {
             return null;
@@ -239,14 +227,4 @@ public class AdminSpeakingServiceImpl implements AdminSpeakingService {
         }
     }
 
-    private int normalizePageNum(Integer pageNum) {
-        return pageNum == null || pageNum < 1 ? 1 : pageNum;
-    }
-
-    private int normalizePageSize(Integer pageSize) {
-        if (pageSize == null || pageSize < 1) {
-            return 10;
-        }
-        return Math.min(pageSize, 100);
-    }
 }

@@ -21,9 +21,12 @@ import java.util.List;
 public class ReadingUserRecordAdapter implements UserRecordAdapter {
 
     private final UserReadingService userReadingService;
+    private final RecordReviewBuilder recordReviewBuilder;
 
-    public ReadingUserRecordAdapter(UserReadingService userReadingService) {
+    public ReadingUserRecordAdapter(UserReadingService userReadingService,
+                                    RecordReviewBuilder recordReviewBuilder) {
         this.userReadingService = userReadingService;
+        this.recordReviewBuilder = recordReviewBuilder;
     }
 
     @Override
@@ -53,6 +56,7 @@ public class ReadingUserRecordAdapter implements UserRecordAdapter {
         vo.setRecordId(recordId);
         vo.setDetailType(UserRecordDetailTypeConstants.READING_RECORD_DETAIL);
         vo.setDetail(detail);
+        vo.setReview(recordReviewBuilder.buildReading(userId, detail));
         return vo;
     }
 

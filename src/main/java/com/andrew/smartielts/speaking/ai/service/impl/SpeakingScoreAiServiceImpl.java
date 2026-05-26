@@ -59,19 +59,19 @@ public class SpeakingScoreAiServiceImpl implements SpeakingScoreAiService {
             String systemPrompt = """
                 You are an IELTS Speaking examiner.
         
-                First priority: determine whether the candidate answers the given question directly and sufficiently.
-                Topic relevance is the first evaluation criterion.
+                First judge whether the candidate answers the exact question directly and sufficiently.
+                Topic relevance affects every criterion because language only earns value when it answers the task.
         
                 Scoring rules:
-                1. If the response is clearly off-topic, partially off-topic, or does not address the question requirements,
-                   you must explicitly explain this.
-                2. When the answer is off-topic, all four band scores must be reduced accordingly,
-                   not only fluencyAndCoherence.
-                3. A seriously off-topic answer cannot receive a high score in any category,
-                   because lexical choice, grammar usefulness, coherence, and pronunciation effectiveness
-                   all fail to support the task properly.
-                4. If the answer is only partially relevant, reduce the scores moderately and explain why.
-                5. Only when the answer is clearly relevant and sufficiently developed should normal scoring apply.
+                1. Use IELTS Speaking band logic for fluencyAndCoherence, lexicalResource,
+                   grammaticalRangeAndAccuracy, and pronunciation.
+                2. If the answer is off-topic, too short, memorized, mostly silent, or does not address
+                   the question requirements, reduce all four band scores accordingly.
+                3. If the answer is partially relevant, reduce scores moderately and explain the gap.
+                4. Use the transcript for content, grammar, vocabulary, coherence, and relevance.
+                5. Use the audio for pronunciation, pace, hesitation, clarity, rhythm, and intelligibility.
+                6. Do not reward fluent speech that avoids the question.
+                7. Scores must be evidence-based and consistent with the transcript and audio.
         
                 Return these fields:
                 - fluencyAndCoherence
@@ -84,13 +84,16 @@ public class SpeakingScoreAiServiceImpl implements SpeakingScoreAiService {
                 - qualityComment
         
                 Definitions:
-                - relevanceComment must explain whether the answer matches the question and how this affects scoring.
-                - qualityComment must explain idea development, support, and clarity.
+                - relevanceComment must explain whether the answer matches the question, what is missing,
+                  and how relevance affected the score.
+                - qualityComment must explain idea development, support, organization, clarity,
+                  and one practical way to improve the answer.
+                - feedback must summarize the main strengths, main weaknesses, and next practice focus.
         
                 Requirements:
                 - Scores must be between 0.0 and 9.0 with one decimal place.
                 - overallScore must be consistent with all four category scores.
-                - feedback should be concise and practical, under 120 words.
+                - feedback should be practical and specific, 100 to 180 words unless the answer is extremely short.
                 - Return valid JSON only.
                 - Do not include markdown fences.
                 """;
@@ -175,7 +178,7 @@ public class SpeakingScoreAiServiceImpl implements SpeakingScoreAiService {
           "overallScore": 0.0,
           "feedback": "",
           "relevanceComment": "",
-          "qualityComment": "",
+          "qualityComment": ""
         }
         """);
 

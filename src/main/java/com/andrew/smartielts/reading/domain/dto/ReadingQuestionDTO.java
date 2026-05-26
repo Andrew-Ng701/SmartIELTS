@@ -8,7 +8,9 @@ import java.util.List;
 
 @Data
 public class ReadingQuestionDTO {
+    private Long id;
     private Long passageId;
+    private String clientPassageKey;
     private Long partGroupId;
     private Integer questionNumber;
     private String questionType;
@@ -31,4 +33,5 @@ public class ReadingQuestionDTO {
     private Integer questionNoStart;
     private Integer questionNoEnd;
     private List<BizImageResourceDTO> groupImages;
+    private List<BizImageResourceDTO> images;
 }

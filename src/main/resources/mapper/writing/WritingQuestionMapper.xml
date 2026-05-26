@@ -9,10 +9,12 @@
                type="com.andrew.smartielts.writing.domain.pojo.WritingQuestion">
         <id property="id" column="id"/>
         <result property="taskType" column="task_type"/>
+        <result property="chartType" column="chart_type"/>
         <result property="title" column="title"/>
         <result property="description" column="description"/>
-        <result property="imageUrl" column="image_url"/>
-        <result property="imageObjectKey" column="image_object_key"/>
+        <result property="imageDetailDescription" column="image_detail_description"/>
+        <result property="prepSeconds" column="prep_seconds"/>
+        <result property="totalSeconds" column="total_seconds"/>
         <result property="isDeleted" column="is_deleted"/>
         <result property="deletedTime" column="deleted_time"/>
         <result property="createdTime" column="created_time"/>
@@ -21,32 +23,12 @@
     <sql id="BaseSelectColumns">
         q.id,
         q.task_type,
+        q.chart_type,
         q.title,
         q.description,
-        COALESCE(
-            (
-                SELECT bir.file_url
-                FROM biz_image_resource bir
-                WHERE bir.target_type = 'WRITING_QUESTION'
-                  AND bir.target_id = q.id
-                  AND bir.is_deleted = 0
-                ORDER BY bir.sort_order ASC, bir.id ASC
-                LIMIT 1
-            ),
-            q.image_url
-        ) AS image_url,
-        COALESCE(
-            (
-                SELECT bir.object_key
-                FROM biz_image_resource bir
-                WHERE bir.target_type = 'WRITING_QUESTION'
-                  AND bir.target_id = q.id
-                  AND bir.is_deleted = 0
-                ORDER BY bir.sort_order ASC, bir.id ASC
-                LIMIT 1
-            ),
-            q.image_object_key
-        ) AS image_object_key,
+        q.image_detail_description,
+        q.prep_seconds,
+        q.total_seconds,
         q.is_deleted,
         q.deleted_time,
         q.created_time
@@ -59,10 +41,12 @@
         INSERT INTO writing_question
         (
             task_type,
+            chart_type,
             title,
             description,
-            image_url,
-            image_object_key,
+            image_detail_description,
+            prep_seconds,
+            total_seconds,
             is_deleted,
             deleted_time,
             created_time
@@ -70,10 +54,12 @@
         VALUES
             (
                 #{taskType},
+                #{chartType},
                 #{title},
                 #{description},
-                #{imageUrl},
-                #{imageObjectKey},
+                #{imageDetailDescription},
+                #{prepSeconds},
+                #{totalSeconds},
                 #{isDeleted},
                 #{deletedTime},
                 #{createdTime}
@@ -85,10 +71,18 @@
         UPDATE writing_question
         SET
             task_type = #{taskType},
+            chart_type = #{chartType},
             title = #{title},
             description = #{description},
-            image_url = #{imageUrl},
-            image_object_key = #{imageObjectKey}
+            image_detail_description = #{imageDetailDescription},
+            prep_seconds = #{prepSeconds},
+            total_seconds = #{totalSeconds}
+        WHERE id = #{id}
+    </update>
+
+    <update id="updateImageDetailDescription">
+        UPDATE writing_question
+        SET image_detail_description = #{imageDetailDescription}
         WHERE id = #{id}
     </update>
 
@@ -97,6 +91,15 @@
         <include refid="BaseSelectColumns"/>
         FROM writing_question q
         WHERE q.is_deleted = 0
+        ORDER BY q.created_time DESC, q.id DESC
+    </select>
+
+    <select id="findByTaskType" resultMap="WritingQuestionResultMap">
+        SELECT
+        <include refid="BaseSelectColumns"/>
+        FROM writing_question q
+        WHERE q.is_deleted = 0
+        AND REPLACE(UPPER(q.task_type), '_', '') = #{taskType}
         ORDER BY q.created_time DESC, q.id DESC
     </select>
 
@@ -144,14 +147,5 @@
         WHERE id = #{id}
           AND is_deleted = 1
     </update>
-
-    <select id="findNeedImageMigration" resultMap="WritingQuestionResultMap">
-        select
-        <include refid="BaseSelectColumns"/>
-        from writing_question
-        where image_target_migrated = 0
-        order by id asc
-    </select>
-
 
 </mapper>

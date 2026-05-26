@@ -2,8 +2,8 @@ package com.andrew.smartielts.user.domain.vo;
 
 import lombok.Data;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.util.List;
 
 @Data
 public class UserAdminVO {
@@ -22,13 +22,17 @@ public class UserAdminVO {
 
     private LocalDateTime lastLoginTime;
 
+    private Integer consecutiveLoginDays;
+
     private String profilePictureUrl;
 
     private String profilePictureObjectKey;
 
-    private Long totalActiveRecordCount;
+    private BigDecimal listeningTargetScore;
 
-    private Long totalDeletedRecordCount;
+    private BigDecimal readingTargetScore;
 
-    private List<UserRecordCountVO> recordCounts;
+    private BigDecimal writingTargetScore;
+
+    private BigDecimal speakingTargetScore;
 }

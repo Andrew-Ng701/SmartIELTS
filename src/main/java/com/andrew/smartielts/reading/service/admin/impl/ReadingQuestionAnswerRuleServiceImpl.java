@@ -58,19 +58,27 @@ public class ReadingQuestionAnswerRuleServiceImpl implements ReadingQuestionAnsw
             entity.setQuestionId(questionId);
             entity.setBlankNo(rule.getBlankNo() == null ? 1 : rule.getBlankNo());
             entity.setAnswerGroupNo(rule.getAnswerGroupNo() == null ? 1 : rule.getAnswerGroupNo());
-            entity.setAnswerText(trimToNull(rule.getAnswerText()));
-            entity.setNormalizedAnswer(trimToNull(rule.getNormalizedAnswer()));
-            entity.setIsPrimary(rule.getIsPrimary() == null ? 0 : rule.getIsPrimary());
-            entity.setDisplayOrder(rule.getDisplayOrder() == null ? index : rule.getDisplayOrder());
 
-            if (entity.getAnswerText() == null) {
-                index++;
+            List<String> answerTexts = splitAcceptedAnswerText(rule.getAnswerText());
+            List<String> normalizedAnswers = splitAcceptedAnswerText(rule.getNormalizedAnswer());
+            if (answerTexts.isEmpty()) {
                 continue;
             }
 
-            readingQuestionAnswerRuleMapper.insertReadingQuestionAnswerRule(entity);
-            saved.add(entity);
-            index++;
+            for (int answerIndex = 0; answerIndex < answerTexts.size(); answerIndex++) {
+                QuestionAnswerRule splitEntity = new QuestionAnswerRule();
+                splitEntity.setQuestionId(entity.getQuestionId());
+                splitEntity.setBlankNo(entity.getBlankNo());
+                splitEntity.setAnswerGroupNo(entity.getAnswerGroupNo());
+                splitEntity.setAnswerText(answerTexts.get(answerIndex));
+                splitEntity.setNormalizedAnswer(answerIndex < normalizedAnswers.size() ? normalizedAnswers.get(answerIndex) : null);
+                splitEntity.setIsPrimary(answerIndex == 0 && rule.getIsPrimary() != null ? rule.getIsPrimary() : 0);
+                splitEntity.setDisplayOrder(rule.getDisplayOrder() == null ? index : rule.getDisplayOrder() + answerIndex);
+
+                readingQuestionAnswerRuleMapper.insertReadingQuestionAnswerRule(splitEntity);
+                saved.add(splitEntity);
+                index++;
+            }
         }
 
         return saved;
@@ -91,5 +99,21 @@ public class ReadingQuestionAnswerRuleServiceImpl implements ReadingQuestionAnsw
         }
         String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private List<String> splitAcceptedAnswerText(String value) {
+        List<String> result = new ArrayList<>();
+        String text = trimToNull(value);
+        if (text == null) {
+            return result;
+        }
+
+        for (String item : text.split(",")) {
+            String trimmed = trimToNull(item);
+            if (trimmed != null) {
+                result.add(trimmed);
+            }
+        }
+        return result;
     }
 }

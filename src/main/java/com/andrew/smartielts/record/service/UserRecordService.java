@@ -1,16 +1,23 @@
 package com.andrew.smartielts.record.service;
 
 import com.andrew.smartielts.common.page.PageResult;
+import com.andrew.smartielts.listening.domain.vo.ListeningSectionScriptVO;
+import com.andrew.smartielts.record.domain.query.UserRecordListQuery;
 import com.andrew.smartielts.record.domain.query.UserRecordPageQuery;
 import com.andrew.smartielts.record.domain.vo.UserRecordDetailVO;
 import com.andrew.smartielts.record.domain.vo.UserRecordItemVO;
+import com.andrew.smartielts.record.domain.vo.UserRecordListItemVO;
 import com.andrew.smartielts.speaking.domain.vo.SpeakingSessionSummaryVO;
 
 public interface UserRecordService {
 
+    PageResult<UserRecordListItemVO> listRecords(Long userId, UserRecordListQuery query);
+
     PageResult<UserRecordItemVO> pageRecords(Long userId, UserRecordPageQuery query);
 
     UserRecordDetailVO getRecord(Long userId, String moduleType, Long recordId);
+
+    ListeningSectionScriptVO getListeningSectionScript(Long userId, Long recordId, Integer sectionNumber);
 
     void deleteRecord(Long userId, String moduleType, Long recordId);
 

@@ -23,6 +23,7 @@ public final class DashboardLearningContextConstants {
     public static final String CONTEXT_KEY_PASSAGE = "passage";
     public static final String CONTEXT_KEY_QUESTION = "question";
     public static final String CONTEXT_KEY_USER_ATTEMPT = "userAttempt";
+    public static final String CONTEXT_KEY_RECORD_QUESTIONS = "recordQuestions";
 
     public static final String ASK_SCENE_QUESTION_EXPLAIN = "QUESTION_EXPLAIN";
     public static final String ASK_SCENE_QUESTION_RESULT_EXPLAIN = "QUESTION_RESULT_EXPLAIN";

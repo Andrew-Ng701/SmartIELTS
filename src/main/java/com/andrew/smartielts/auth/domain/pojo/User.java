@@ -25,6 +25,8 @@ public class User {
 
     private LocalDateTime lastLoginTime;
 
+    private Integer consecutiveLoginDays;
+
     private Long tokenVersion;
 
     private String profilePictureUrl;

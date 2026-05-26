@@ -67,15 +67,7 @@ public interface WritingRecordMapper {
 
     Long countAdminActive(@Param("query") AdminWritingRecordPageQuery query);
 
-    List<WritingRecord> pageAdminActive(@Param("query") AdminWritingRecordPageQuery query,
-                                        @Param("offset") Integer offset,
-                                        @Param("limit") Integer limit);
-
     Long countAdminDeleted(@Param("query") AdminWritingDeletedRecordPageQuery query);
-
-    List<WritingRecord> pageAdminDeleted(@Param("query") AdminWritingDeletedRecordPageQuery query,
-                                         @Param("offset") Integer offset,
-                                         @Param("limit") Integer limit);
 
     List<WritingRecord> findRecentActiveByUserId(@Param("userId") Long userId,
                                                  @Param("limit") Integer limit);

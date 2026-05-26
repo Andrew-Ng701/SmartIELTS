@@ -56,35 +56,62 @@ public class AiWritingScoringServiceImpl implements AiWritingScoringService {
 
     private String buildPrompt(WritingQuestion question, WritingRecord record, String finalText) {
         String questionText = question == null ? "" : question.getDescription();
+        String imageDetailDescription = question == null ? "" : nullToEmpty(question.getImageDetailDescription());
         String targetScore = record.getTargetScore() == null ? "" : record.getTargetScore().toPlainString();
 
         return """
-                你是一位 IELTS Writing 評分助手。
-                請根據以下資訊進行評分，並且只輸出 JSON，不要輸出額外說明。
+                You are a strict but helpful IELTS Writing examiner.
+                Score the submission using IELTS Writing band descriptors.
+                Evaluate Task Achievement/Task Response, Coherence and Cohesion, Lexical Resource,
+                and Grammatical Range and Accuracy. Penalize memorized, irrelevant, too short,
+                incomplete, or off-topic answers.
 
-                題目：
+                Requirements:
+                - Return valid JSON only. Do not include markdown fences.
+                - aiScore must be a number from 0.0 to 9.0, rounded to one decimal place.
+                - aiFeedback must be detailed enough for frontend display.
+                - In aiFeedback, wrap important phrases with double asterisks for bold emphasis, for example **weak thesis**.
+                - In aiFeedback, separate every paragraph with one blank line.
+                - In aiFeedback, include:
+                  1. Overall judgement and reason for the score.
+                  2. Criterion-by-criterion comments for all four IELTS criteria.
+                  3. Two to four concrete improvement actions.
+                  4. If useful, mention missing word count, weak structure, unsupported ideas,
+                     vocabulary repetition, grammar patterns, or relevance issues.
+                - Keep aiFeedback in English only.
+                - Do not invent facts not supported by the prompt or answer.
+
+                Writing prompt:
                 %s
 
-                學生期望分數：
+                Detailed visual/task context from question image:
                 %s
 
-                提交方式：
+                Candidate target score:
                 %s
 
-                作文內容：
+                Input type:
                 %s
 
-                嚴格輸出以下 JSON 格式：
+                Candidate answer:
+                %s
+
+                Return JSON in this exact shape:
                 {
                   "aiScore": 0.0,
                   "aiFeedback": ""
                 }
                 """.formatted(
                 questionText,
+                imageDetailDescription,
                 targetScore,
                 record.getInputType(),
                 finalText == null ? "" : finalText
         );
+    }
+
+    private String nullToEmpty(String value) {
+        return value == null ? "" : value;
     }
 
     private BigDecimal parseScore(String raw) {
@@ -124,10 +151,7 @@ public class AiWritingScoringServiceImpl implements AiWritingScoringService {
             JsonNode node = objectMapper.readTree(raw);
             JsonNode aiFeedback = node.get("aiFeedback");
             if (aiFeedback != null && aiFeedback.isTextual()) {
-                String s = aiFeedback.asText().trim();
-                if (!s.isEmpty()) {
-                    return s;
-                }
+                return normalizeFeedbackFormat(aiFeedback.asText());
             }
         } catch (Exception ignored) {
             // fall back to regex
@@ -135,11 +159,58 @@ public class AiWritingScoringServiceImpl implements AiWritingScoringService {
         Pattern pattern = Pattern.compile("\"aiFeedback\"\\s*:\\s*\"(.*?)\"", Pattern.DOTALL);
         Matcher matcher = pattern.matcher(raw);
         if (matcher.find()) {
-            return matcher.group(1)
+            String feedback = matcher.group(1)
                     .replace("\\n", "\n")
                     .replace("\\\"", "\"")
                     .trim();
+            return normalizeFeedbackFormat(feedback);
         }
         return null;
+    }
+
+    private String normalizeFeedbackFormat(String feedback) {
+        if (feedback == null) {
+            return null;
+        }
+        String normalized = feedback
+                .replace("\r\n", "\n")
+                .replace("\r", "\n")
+                .trim();
+        if (normalized.isEmpty()) {
+            return null;
+        }
+
+        StringBuilder result = new StringBuilder();
+        String[] paragraphs = normalized.split("\\n+");
+        for (String paragraph : paragraphs) {
+            String trimmed = paragraph.trim();
+            if (trimmed.isEmpty()) {
+                continue;
+            }
+            if (!result.isEmpty()) {
+                result.append("\n\n");
+            }
+            result.append(formatFeedbackParagraph(trimmed));
+        }
+        return result.isEmpty() ? null : result.toString();
+    }
+
+    private String formatFeedbackParagraph(String paragraph) {
+        if (paragraph.startsWith("**")) {
+            return paragraph;
+        }
+
+        String formatted = paragraph
+                .replaceFirst("^(Overall Judgement|Overall Judgment):", "**$1**:")
+                .replaceFirst("^(Task Achievement|Task Response):", "**$1**:")
+                .replaceFirst("^(Coherence and Cohesion):", "**$1**:")
+                .replaceFirst("^(Lexical Resource):", "**$1**:")
+                .replaceFirst("^(Grammatical Range and Accuracy):", "**$1**:")
+                .replaceFirst("^(Improvement Actions):", "**$1**:");
+        if (!formatted.equals(paragraph)) {
+            return formatted;
+        }
+
+        return paragraph.replaceFirst("^(\\d+\\.\\s+)([^:*\\n]{1,80}):", "$1**$2**:");
     }
 }

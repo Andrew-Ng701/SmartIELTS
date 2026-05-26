@@ -7,12 +7,14 @@ import com.andrew.smartielts.common.storage.BucketType;
 import com.andrew.smartielts.common.storage.UploadResult;
 import com.andrew.smartielts.common.storage.service.OssStorageService;
 import com.andrew.smartielts.utils.SecurityUtils;
+import com.andrew.smartielts.writing.ai.AiProperties;
 import com.andrew.smartielts.writing.ai.AiWritingScore;
 import com.andrew.smartielts.writing.ai.service.AiWritingScoringService;
 import com.andrew.smartielts.writing.domain.pojo.WritingQuestion;
 import com.andrew.smartielts.writing.domain.pojo.WritingRecord;
 import com.andrew.smartielts.writing.domain.pojo.WritingRecordAttachment;
 import com.andrew.smartielts.writing.domain.query.user.UserWritingRecordPageQuery;
+import com.andrew.smartielts.writing.domain.vo.WritingQuestionVO;
 import com.andrew.smartielts.writing.domain.vo.WritingRecordDetailVO;
 import com.andrew.smartielts.writing.domain.vo.WritingRecordVO;
 import com.andrew.smartielts.writing.io.WritingSubmissionValidator;
@@ -28,12 +30,16 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.pdmodel.PDPage;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.math.BigDecimal;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -79,6 +85,9 @@ class UserWritingServiceImplTest {
     private AiWritingScoringService aiWritingScoringService;
 
     @Mock
+    private AiProperties aiProperties;
+
+    @Mock
     private BizImageResourceService bizImageResourceService;
 
     @AfterEach
@@ -96,6 +105,7 @@ class UserWritingServiceImplTest {
 
         when(writingQuestionMapper.findById(1L)).thenReturn(question);
         when(writingQuestionMapper.findByIdForAdmin(1L)).thenReturn(question);
+        when(aiProperties.getModel()).thenReturn("qwen-plus");
         when(bizImageResourceService.listByTarget("WRITING_QUESTION", 1L)).thenReturn(List.of());
         doAnswer(invocation -> {
             WritingRecord record = invocation.getArgument(0);
@@ -129,6 +139,7 @@ class UserWritingServiceImplTest {
 
         assertEquals("SUCCESS", savedRecord.get().getAiStatus());
         assertEquals(new BigDecimal("6.5"), savedRecord.get().getAiScore());
+        assertEquals("qwen-plus", savedRecord.get().getAiModel());
         assertEquals("my essay", savedRecord.get().getExtractedText());
         verify(writingRecordMapper).updateExtractedText(101L, "my essay");
         verify(writingRecordMapper).updateAiResult(savedRecord.get());
@@ -143,6 +154,7 @@ class UserWritingServiceImplTest {
 
         when(writingQuestionMapper.findById(1L)).thenReturn(question);
         when(writingQuestionMapper.findByIdForAdmin(1L)).thenReturn(question);
+        when(aiProperties.getModel()).thenReturn("qwen-plus");
         when(bizImageResourceService.listByTarget("WRITING_QUESTION", 1L)).thenReturn(List.of());
         when(ossStorageService.upload(any(MultipartFile.class), eq(BucketType.WRITING_RECORD), eq("writing-record/202")))
                 .thenReturn(new UploadResult("https://oss.test/page.png", "writing-record/202/page.png"));
@@ -191,6 +203,7 @@ class UserWritingServiceImplTest {
 
         when(writingQuestionMapper.findById(1L)).thenReturn(question);
         when(writingQuestionMapper.findByIdForAdmin(1L)).thenReturn(question);
+        when(aiProperties.getModel()).thenReturn("qwen-plus");
         when(bizImageResourceService.listByTarget("WRITING_QUESTION", 1L)).thenReturn(List.of());
         when(ossStorageService.upload(any(MultipartFile.class), eq(BucketType.WRITING_RECORD), eq("writing-record/303")))
                 .thenReturn(new UploadResult("https://oss.test/essay.pdf", "writing-record/303/essay.pdf"));
@@ -230,6 +243,58 @@ class UserWritingServiceImplTest {
     }
 
     @Test
+    void pdfSubmission_whenTextExtractionEmpty_shouldRenderPagesAndOcrFallback() throws IOException {
+        UserWritingServiceImpl service = newService(Runnable::run);
+        WritingQuestion question = question();
+        AtomicReference<WritingRecord> savedRecord = new AtomicReference<>();
+        List<WritingRecordAttachment> attachments = new ArrayList<>();
+        byte[] pdfBytes = blankPdfBytes();
+
+        when(writingQuestionMapper.findById(1L)).thenReturn(question);
+        when(writingQuestionMapper.findByIdForAdmin(1L)).thenReturn(question);
+        when(aiProperties.getModel()).thenReturn("qwen-plus");
+        when(bizImageResourceService.listByTarget("WRITING_QUESTION", 1L)).thenReturn(List.of());
+        when(ossStorageService.upload(any(MultipartFile.class), eq(BucketType.WRITING_RECORD), eq("writing-record/707")))
+                .thenReturn(new UploadResult("https://oss.test/essay.pdf", "writing-record/707/essay.pdf"));
+        when(ossStorageService.upload(any(MultipartFile.class), eq(BucketType.WRITING_RECORD), eq("writing-record/707/pdf-ocr")))
+                .thenReturn(new UploadResult("https://oss.test/pdf-page-1.png", "writing-record/707/pdf-page-1.png"));
+        when(ossStorageService.downloadBytes(BucketType.WRITING_RECORD, "writing-record/707/essay.pdf"))
+                .thenReturn(pdfBytes);
+        doAnswer(invocation -> {
+            WritingRecord record = invocation.getArgument(0);
+            record.setId(707L);
+            savedRecord.set(record);
+            return null;
+        }).when(writingRecordMapper).insert(any(WritingRecord.class));
+        doAnswer(invocation -> {
+            WritingRecordAttachment attachment = invocation.getArgument(0);
+            attachment.setId(501L);
+            attachments.add(attachment);
+            return null;
+        }).when(writingRecordAttachmentMapper).insert(any(WritingRecordAttachment.class));
+        when(writingRecordMapper.findAnyById(707L)).thenAnswer(invocation -> savedRecord.get());
+        when(writingRecordAttachmentMapper.findByRecordId(707L)).thenReturn(attachments);
+        when(pdfTextExtractor.extractText(pdfBytes)).thenReturn("   ");
+        when(ocrService.recognizeImage("https://oss.test/pdf-page-1.png")).thenReturn("ocr pdf essay");
+        when(aiWritingScoringService.score(eq(question), any(WritingRecord.class), eq("ocr pdf essay")))
+                .thenReturn(score("6.5", "OCR fallback worked."));
+
+        TransactionSynchronizationManager.initSynchronization();
+        try (MockedStatic<SecurityUtils> security = mockStatic(SecurityUtils.class)) {
+            security.when(SecurityUtils::getCurrentUserId).thenReturn(9L);
+
+            MockMultipartFile pdf = new MockMultipartFile("pdf", "essay.pdf", "application/pdf", "fake".getBytes());
+            service.submitRecord(1L, null, null, null, pdf);
+
+            runAfterCommit();
+        }
+
+        assertEquals("ocr pdf essay", savedRecord.get().getExtractedText());
+        assertEquals("ocr pdf essay", attachments.get(0).getOcrText());
+        assertEquals("SUCCESS", savedRecord.get().getAiStatus());
+    }
+
+    @Test
     void workerFailure_shouldMarkFailedWithoutFakeZeroScore() {
         UserWritingServiceImpl service = newService(Runnable::run);
         WritingQuestion question = question();
@@ -237,6 +302,7 @@ class UserWritingServiceImplTest {
 
         when(writingQuestionMapper.findById(1L)).thenReturn(question);
         when(writingQuestionMapper.findByIdForAdmin(1L)).thenReturn(question);
+        when(aiProperties.getModel()).thenReturn("qwen-plus");
         when(bizImageResourceService.listByTarget("WRITING_QUESTION", 1L)).thenReturn(List.of());
         doAnswer(invocation -> {
             WritingRecord record = invocation.getArgument(0);
@@ -259,6 +325,7 @@ class UserWritingServiceImplTest {
         assertEquals("FAILED", savedRecord.get().getAiStatus());
         assertNull(savedRecord.get().getAiScore());
         assertEquals("AI timeout", savedRecord.get().getAiFeedback());
+        assertEquals("qwen-plus", savedRecord.get().getAiModel());
     }
 
     @Test
@@ -275,6 +342,43 @@ class UserWritingServiceImplTest {
 
         verify(writingRecordMapper).softDeleteByIdForUser(505L, 9L);
         verify(writingRecordMapper).restoreByIdForUser(505L, 9L);
+    }
+
+    @Test
+    void getRecord_shouldExposePreviewAssetsForQuestionImagesAndAnswerAttachments() {
+        UserWritingServiceImpl service = newService(Runnable::run);
+        WritingRecord record = new WritingRecord();
+        record.setId(808L);
+        record.setUserId(9L);
+        record.setQuestionId(1L);
+        record.setInputType("PDF");
+        record.setExtractedText("pdf essay");
+
+        BizImageResource questionImage = new BizImageResource();
+        questionImage.setId(11L);
+        questionImage.setFileUrl("https://oss.test/chart.png");
+        questionImage.setSortOrder(1);
+
+        WritingRecordAttachment attachment = new WritingRecordAttachment();
+        attachment.setId(22L);
+        attachment.setFileType("PDF");
+        attachment.setFileUrl("https://oss.test/essay.pdf");
+        attachment.setSortOrder(1);
+
+        when(writingRecordMapper.findAnyByIdForUser(808L, 9L)).thenReturn(record);
+        when(writingQuestionMapper.findByIdForAdmin(1L)).thenReturn(question());
+        when(bizImageResourceService.listByTarget("WRITING_QUESTION", 1L)).thenReturn(List.of(questionImage));
+        when(writingRecordAttachmentMapper.findByRecordId(808L)).thenReturn(List.of(attachment));
+
+        WritingRecordDetailVO result = service.getRecord(808L, 9L);
+
+        assertEquals(2, result.getPreviewAssets().size());
+        assertEquals("QUESTION_IMAGE", result.getPreviewAssets().get(0).getSourceType());
+        assertEquals("IMAGE", result.getPreviewAssets().get(0).getFileType());
+        assertEquals("https://oss.test/chart.png", result.getPreviewAssets().get(0).getFileUrl());
+        assertEquals("ANSWER_ATTACHMENT", result.getPreviewAssets().get(1).getSourceType());
+        assertEquals("PDF", result.getPreviewAssets().get(1).getFileType());
+        assertEquals("https://oss.test/essay.pdf", result.getPreviewAssets().get(1).getFileUrl());
     }
 
     @Test
@@ -312,9 +416,30 @@ class UserWritingServiceImplTest {
         assertEquals("Describe the chart.", vo.getQuestionDescription());
         assertEquals("https://oss.test/chart.png", vo.getQuestionImageUrl());
         assertEquals("TASK1", vo.getTaskType());
+        assertEquals("Line graph", vo.getChartType());
         assertEquals(2, vo.getAttachmentCount());
         assertEquals(0, vo.getIsDeleted());
         assertTrue(vo.getAnswerPreview().startsWith("This is"));
+    }
+
+    @Test
+    void listAllWritingPaper_shouldFilterByNormalizedTaskType() {
+        UserWritingServiceImpl service = newService(Runnable::run);
+        WritingQuestion question = question();
+        question.setPrepSeconds(203);
+        question.setTotalSeconds(1245);
+
+        when(writingQuestionMapper.findByTaskType("TASK1")).thenReturn(List.of(question));
+        when(bizImageResourceService.listByTargets("WRITING_QUESTION", List.of(1L)))
+                .thenReturn(Map.of(1L, List.of()));
+
+        List<WritingQuestionVO> result = service.listAllWritingPaper("task_1");
+
+        assertEquals(1, result.size());
+        assertEquals("TASK1", result.get(0).getTaskType());
+        assertEquals(203, result.get(0).getPrepSeconds());
+        assertEquals(1245, result.get(0).getTotalSeconds());
+        verify(writingQuestionMapper, never()).findAll();
     }
 
     @Test
@@ -335,6 +460,7 @@ class UserWritingServiceImplTest {
                 ocrService,
                 pdfTextExtractor,
                 aiWritingScoringService,
+                aiProperties,
                 bizImageResourceService,
                 executor
         );
@@ -344,6 +470,7 @@ class UserWritingServiceImplTest {
         WritingQuestion question = new WritingQuestion();
         question.setId(1L);
         question.setTaskType("TASK1");
+        question.setChartType("Line graph");
         question.setTitle("Task 1");
         question.setDescription("Describe the chart.");
         return question;
@@ -355,6 +482,15 @@ class UserWritingServiceImplTest {
         result.setAiFeedback(feedback);
         result.setRawResponse("{\"aiScore\":" + score + ",\"aiFeedback\":\"" + feedback + "\"}");
         return result;
+    }
+
+    private byte[] blankPdfBytes() throws IOException {
+        try (PDDocument document = new PDDocument();
+             ByteArrayOutputStream outputStream = new ByteArrayOutputStream()) {
+            document.addPage(new PDPage());
+            document.save(outputStream);
+            return outputStream.toByteArray();
+        }
     }
 
     private void runAfterCommit() {

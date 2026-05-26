@@ -10,6 +10,7 @@ public class DashboardAskRequest {
     private String query;
     private Long targetUserId;
     private Map<String, Object> context;
+    private List<DashboardAskConversationMessage> conversationHistory;
     private String askScene;
     private String responseMode;
     private DashboardAskObjectRef objectRef;

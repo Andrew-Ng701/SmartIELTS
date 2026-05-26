@@ -7,6 +7,7 @@ import com.andrew.smartielts.common.storage.BucketType;
 import com.andrew.smartielts.common.storage.UploadResult;
 import com.andrew.smartielts.common.storage.service.OssStorageService;
 import com.andrew.smartielts.utils.SecurityUtils;
+import com.andrew.smartielts.writing.ai.AiProperties;
 import com.andrew.smartielts.writing.ai.AiWritingScore;
 import com.andrew.smartielts.writing.ai.service.AiWritingScoringService;
 import com.andrew.smartielts.writing.domain.pojo.WritingQuestion;
@@ -15,6 +16,7 @@ import com.andrew.smartielts.writing.domain.pojo.WritingRecordAttachment;
 import com.andrew.smartielts.writing.domain.query.user.UserWritingDeletedRecordPageQuery;
 import com.andrew.smartielts.writing.domain.query.user.UserWritingRecordPageQuery;
 import com.andrew.smartielts.writing.domain.vo.WritingAttachmentVO;
+import com.andrew.smartielts.writing.domain.vo.WritingPreviewAssetVO;
 import com.andrew.smartielts.writing.domain.vo.WritingQuestionVO;
 import com.andrew.smartielts.writing.domain.vo.WritingRecordDetailVO;
 import com.andrew.smartielts.writing.domain.vo.WritingRecordVO;
@@ -25,6 +27,9 @@ import com.andrew.smartielts.writing.mapper.WritingRecordMapper;
 import com.andrew.smartielts.writing.ocr.service.OcrService;
 import com.andrew.smartielts.writing.pdf.PdfTextExtractor;
 import com.andrew.smartielts.writing.service.user.UserWritingService;
+import org.apache.pdfbox.Loader;
+import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.rendering.PDFRenderer;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,6 +37,12 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.multipart.MultipartFile;
 
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -58,6 +69,8 @@ public class UserWritingServiceImpl implements UserWritingService {
 
     private static final String FILE_TYPE_IMAGE = "IMAGE";
     private static final String FILE_TYPE_PDF = "PDF";
+    private static final String PREVIEW_SOURCE_QUESTION_IMAGE = "QUESTION_IMAGE";
+    private static final String PREVIEW_SOURCE_ANSWER_ATTACHMENT = "ANSWER_ATTACHMENT";
 
     private static final String AI_STATUS_PENDING = "PENDING";
     private static final String AI_STATUS_SUCCESS = "SUCCESS";
@@ -65,8 +78,11 @@ public class UserWritingServiceImpl implements UserWritingService {
 
     private static final String AI_PROVIDER_ALIYUN_DEEPSEEK = "ALIYUN_DEEPSEEK";
     private static final String DEFAULT_AI_MODEL = "qwen3.5-flash";
+    private static final int PDF_OCR_RENDER_DPI = 200;
 
     private static final int ANSWER_PREVIEW_LENGTH = 160;
+    private static final int DEFAULT_PREP_SECONDS = 0;
+    private static final int DEFAULT_TOTAL_SECONDS = 3600;
 
     private final WritingQuestionMapper writingQuestionMapper;
     private final WritingRecordMapper writingRecordMapper;
@@ -76,6 +92,7 @@ public class UserWritingServiceImpl implements UserWritingService {
     private final OcrService ocrService;
     private final PdfTextExtractor pdfTextExtractor;
     private final AiWritingScoringService aiWritingScoringService;
+    private final AiProperties aiProperties;
     private final BizImageResourceService bizImageResourceService;
     private final Executor writingScoringExecutor;
 
@@ -87,6 +104,7 @@ public class UserWritingServiceImpl implements UserWritingService {
                                   OcrService ocrService,
                                   PdfTextExtractor pdfTextExtractor,
                                   AiWritingScoringService aiWritingScoringService,
+                                  AiProperties aiProperties,
                                   BizImageResourceService bizImageResourceService,
                                   @Qualifier("writingScoringExecutor") Executor writingScoringExecutor) {
         this.writingQuestionMapper = writingQuestionMapper;
@@ -97,13 +115,17 @@ public class UserWritingServiceImpl implements UserWritingService {
         this.ocrService = ocrService;
         this.pdfTextExtractor = pdfTextExtractor;
         this.aiWritingScoringService = aiWritingScoringService;
+        this.aiProperties = aiProperties;
         this.bizImageResourceService = bizImageResourceService;
         this.writingScoringExecutor = writingScoringExecutor;
     }
 
     @Override
-    public List<WritingQuestionVO> listAllWritingPaper() {
-        List<WritingQuestion> questions = writingQuestionMapper.findAll();
+    public List<WritingQuestionVO> listAllWritingPaper(String taskType) {
+        String normalizedTaskType = normalizeTaskTypeFilter(taskType);
+        List<WritingQuestion> questions = normalizedTaskType == null
+                ? writingQuestionMapper.findAll()
+                : writingQuestionMapper.findByTaskType(normalizedTaskType);
         if (questions == null || questions.isEmpty()) {
             return new ArrayList<>();
         }
@@ -123,20 +145,6 @@ public class UserWritingServiceImpl implements UserWritingService {
             }
         }
         return result;
-    }
-
-    @Override
-    public WritingQuestionVO getQuestion(Long questionId) {
-        if (questionId == null) {
-            throw new RuntimeException("questionId is required");
-        }
-
-        WritingQuestion question = writingQuestionMapper.findById(questionId);
-        if (question == null) {
-            throw new RuntimeException("Writing question not found");
-        }
-
-        return toQuestionVO(question, findQuestionImages(questionId));
     }
 
     @Override
@@ -169,7 +177,7 @@ public class UserWritingServiceImpl implements UserWritingService {
         record.setTargetScore(targetScore);
         record.setAiStatus(AI_STATUS_PENDING);
         record.setAiProvider(AI_PROVIDER_ALIYUN_DEEPSEEK);
-        record.setAiModel(DEFAULT_AI_MODEL);
+        record.setAiModel(resolveAiModel());
         record.setIsDeleted(0);
         record.setDeletedTime(null);
         record.setCreatedTime(LocalDateTime.now());
@@ -185,12 +193,6 @@ public class UserWritingServiceImpl implements UserWritingService {
 
         enqueueScoringAfterCommit(record.getId());
         return buildDetailVO(record, question, questionImages, attachments);
-    }
-
-    @Override
-    public List<WritingRecordVO> listMyRecords(Long userId) {
-        List<WritingRecord> records = writingRecordMapper.findByUserId(userId);
-        return buildRecordVOList(records);
     }
 
     @Override
@@ -385,6 +387,9 @@ public class UserWritingServiceImpl implements UserWritingService {
             }
             byte[] pdfBytes = ossStorageService.downloadBytes(BucketType.WRITING_RECORD, attachment.getFileKey());
             String pdfText = safeTrim(pdfTextExtractor.extractText(pdfBytes));
+            if (pdfText == null) {
+                pdfText = processPdfOcrFallback(attachment, pdfBytes);
+            }
             attachment.setOcrText(pdfText);
             writingRecordAttachmentMapper.updateOcrText(attachment);
             return pdfText;
@@ -403,7 +408,7 @@ public class UserWritingServiceImpl implements UserWritingService {
         record.setAiRawResponse(score.getRawResponse());
         record.setAiStatus(AI_STATUS_SUCCESS);
         record.setAiProvider(AI_PROVIDER_ALIYUN_DEEPSEEK);
-        record.setAiModel(DEFAULT_AI_MODEL);
+        record.setAiModel(resolveAiModel());
 
         writingRecordMapper.updateAiResult(record);
     }
@@ -411,10 +416,51 @@ public class UserWritingServiceImpl implements UserWritingService {
     private void markFailedAndSave(WritingRecord record, String message, Exception e) {
         record.setAiStatus(AI_STATUS_FAILED);
         record.setAiProvider(AI_PROVIDER_ALIYUN_DEEPSEEK);
-        record.setAiModel(DEFAULT_AI_MODEL);
+        record.setAiModel(resolveAiModel());
         record.setAiFeedback(safeTrim(message) == null ? "Writing scoring failed" : message);
         record.setAiRawResponse(e == null ? null : e.toString());
         writingRecordMapper.updateAiResult(record);
+    }
+
+    private String processPdfOcrFallback(WritingRecordAttachment attachment, byte[] pdfBytes) {
+        List<String> parts = new ArrayList<>();
+        try (PDDocument document = Loader.loadPDF(pdfBytes)) {
+            PDFRenderer renderer = new PDFRenderer(document);
+            for (int pageIndex = 0; pageIndex < document.getNumberOfPages(); pageIndex++) {
+                BufferedImage image = renderer.renderImageWithDPI(pageIndex, PDF_OCR_RENDER_DPI);
+                byte[] imageBytes = toPngBytes(image);
+                MultipartFile pageFile = new InMemoryMultipartFile(
+                        "images",
+                        "pdf-page-" + (pageIndex + 1) + ".png",
+                        "image/png",
+                        imageBytes
+                );
+                UploadResult upload = ossStorageService.upload(
+                        pageFile,
+                        BucketType.WRITING_RECORD,
+                        buildWritingRecordBizPath(attachment.getRecordId()) + "/pdf-ocr"
+                );
+                String ocrText = safeTrim(ocrService.recognizeImage(upload.getFileUrl()));
+                if (ocrText != null) {
+                    parts.add(ocrText);
+                }
+            }
+        } catch (Exception e) {
+            throw new RuntimeException("PDF OCR fallback failed: " + e.getMessage(), e);
+        }
+        return parts.isEmpty() ? null : String.join("\n", parts);
+    }
+
+    private byte[] toPngBytes(BufferedImage image) throws IOException {
+        try (ByteArrayOutputStream outputStream = new ByteArrayOutputStream()) {
+            ImageIO.write(image, "png", outputStream);
+            return outputStream.toByteArray();
+        }
+    }
+
+    private String resolveAiModel() {
+        String configuredModel = aiProperties == null ? null : safeTrim(aiProperties.getModel());
+        return configuredModel == null ? DEFAULT_AI_MODEL : configuredModel;
     }
 
     private List<WritingRecordVO> buildRecordVOList(List<WritingRecord> records) {
@@ -513,6 +559,7 @@ public class UserWritingServiceImpl implements UserWritingService {
         vo.setQuestionImageUrl(resolveQuestionImageUrl(question, sortedImages));
         vo.setQuestionImages(sortedImages);
         vo.setTaskType(question == null ? null : question.getTaskType());
+        vo.setChartType(question == null ? null : question.getChartType());
         vo.setInputType(record.getInputType());
         vo.setAnswerPreview(buildAnswerPreview(record));
         vo.setAttachmentCount(attachmentCount == null ? 0 : attachmentCount);
@@ -537,9 +584,13 @@ public class UserWritingServiceImpl implements UserWritingService {
         vo.setQuestionId(record.getQuestionId());
         vo.setQuestionTitle(question == null ? null : question.getTitle());
         vo.setQuestionDescription(question == null ? null : question.getDescription());
+        vo.setPrompt(question == null ? null : question.getDescription());
+        vo.setImageDetailDescription(question == null ? null : question.getImageDetailDescription());
         vo.setQuestionImageUrl(resolveQuestionImageUrl(question, sortedQuestionImages));
         vo.setQuestionImages(sortedQuestionImages);
+        vo.setPreviewAssets(buildPreviewAssets(sortedQuestionImages, sortedAttachments));
         vo.setTaskType(question == null ? null : question.getTaskType());
+        vo.setChartType(question == null ? null : question.getChartType());
         vo.setInputType(record.getInputType());
         vo.setTextContent(record.getTextContent());
         vo.setExtractedText(record.getExtractedText());
@@ -569,6 +620,42 @@ public class UserWritingServiceImpl implements UserWritingService {
 
         vo.setAttachments(attachmentVOList);
         return vo;
+    }
+
+    private List<WritingPreviewAssetVO> buildPreviewAssets(List<BizImageResource> questionImages,
+                                                           List<WritingRecordAttachment> attachments) {
+        List<WritingPreviewAssetVO> previewAssets = new ArrayList<>();
+        int displayOrder = 1;
+        for (BizImageResource image : sortImages(questionImages)) {
+            String fileUrl = trimToNull(image.getFileUrl());
+            if (fileUrl == null) {
+                continue;
+            }
+            WritingPreviewAssetVO asset = new WritingPreviewAssetVO();
+            asset.setSourceType(PREVIEW_SOURCE_QUESTION_IMAGE);
+            asset.setFileType(FILE_TYPE_IMAGE);
+            asset.setFileUrl(fileUrl);
+            asset.setSortOrder(displayOrder);
+            asset.setLabel("Question image " + displayOrder);
+            previewAssets.add(asset);
+            displayOrder++;
+        }
+
+        for (WritingRecordAttachment attachment : sortedAttachments(attachments)) {
+            String fileUrl = trimToNull(attachment.getFileUrl());
+            if (fileUrl == null) {
+                continue;
+            }
+            WritingPreviewAssetVO asset = new WritingPreviewAssetVO();
+            asset.setSourceType(PREVIEW_SOURCE_ANSWER_ATTACHMENT);
+            asset.setFileType(attachment.getFileType());
+            asset.setFileUrl(fileUrl);
+            asset.setSortOrder(displayOrder);
+            asset.setLabel("Answer attachment " + attachment.getSortOrder());
+            previewAssets.add(asset);
+            displayOrder++;
+        }
+        return previewAssets;
     }
 
     private WritingQuestion findQuestionIncludingDeleted(Long questionId) {
@@ -614,16 +701,22 @@ public class UserWritingServiceImpl implements UserWritingService {
         WritingQuestionVO vo = new WritingQuestionVO();
         vo.setId(question.getId());
         vo.setTaskType(question.getTaskType());
+        vo.setChartType(question.getChartType());
         vo.setTitle(question.getTitle());
         vo.setDescription(question.getDescription());
+        vo.setImageDetailDescription(question.getImageDetailDescription());
         vo.setCreatedTime(question.getCreatedTime());
+        vo.setPrepSeconds(resolvePrepSeconds(question));
+        vo.setTotalSeconds(resolveTotalSeconds(question));
+        vo.setPrepMinutes(secondsToMinutes(vo.getPrepSeconds()));
+        vo.setTotalMinutes(secondsToMinutes(vo.getTotalSeconds()));
 
         List<BizImageResource> sortedImages = sortImages(images);
         vo.setImages(sortedImages);
 
         BizImageResource primary = pickPrimaryImage(sortedImages);
-        vo.setImageUrl(primary == null ? trimToNull(question.getImageUrl()) : trimToNull(primary.getFileUrl()));
-        vo.setImageObjectKey(primary == null ? trimToNull(question.getImageObjectKey()) : trimToNull(primary.getObjectKey()));
+        vo.setImageUrl(primary == null ? null : trimToNull(primary.getFileUrl()));
+        vo.setImageObjectKey(primary == null ? null : trimToNull(primary.getObjectKey()));
 
         return vo;
     }
@@ -633,7 +726,25 @@ public class UserWritingServiceImpl implements UserWritingService {
         if (primary != null) {
             return trimToNull(primary.getFileUrl());
         }
-        return question == null ? null : trimToNull(question.getImageUrl());
+        return null;
+    }
+
+    private Integer resolvePrepSeconds(WritingQuestion question) {
+        if (question == null || question.getPrepSeconds() == null || question.getPrepSeconds() < 0) {
+            return DEFAULT_PREP_SECONDS;
+        }
+        return question.getPrepSeconds();
+    }
+
+    private Integer resolveTotalSeconds(WritingQuestion question) {
+        if (question == null || question.getTotalSeconds() == null || question.getTotalSeconds() <= 0) {
+            return DEFAULT_TOTAL_SECONDS;
+        }
+        return question.getTotalSeconds();
+    }
+
+    private Integer secondsToMinutes(Integer seconds) {
+        return seconds == null ? null : seconds / 60;
     }
 
     private BizImageResource pickPrimaryImage(List<BizImageResource> images) {
@@ -701,6 +812,17 @@ public class UserWritingServiceImpl implements UserWritingService {
         return trimmed.isEmpty() ? null : trimmed;
     }
 
+    private String normalizeTaskTypeFilter(String taskType) {
+        String trimmed = trimToNull(taskType);
+        if (trimmed == null) {
+            return null;
+        }
+        return trimmed.toUpperCase()
+                .replace("_", "")
+                .replace("-", "")
+                .replace(" ", "");
+    }
+
     private Long toLong(Object value) {
         if (value instanceof Number number) {
             return number.longValue();
@@ -742,5 +864,59 @@ public class UserWritingServiceImpl implements UserWritingService {
             return 10;
         }
         return Math.min(pageSize, 100);
+    }
+
+    private static class InMemoryMultipartFile implements MultipartFile {
+        private final String name;
+        private final String originalFilename;
+        private final String contentType;
+        private final byte[] content;
+
+        private InMemoryMultipartFile(String name, String originalFilename, String contentType, byte[] content) {
+            this.name = name;
+            this.originalFilename = originalFilename;
+            this.contentType = contentType;
+            this.content = content == null ? new byte[0] : content;
+        }
+
+        @Override
+        public String getName() {
+            return name;
+        }
+
+        @Override
+        public String getOriginalFilename() {
+            return originalFilename;
+        }
+
+        @Override
+        public String getContentType() {
+            return contentType;
+        }
+
+        @Override
+        public boolean isEmpty() {
+            return content.length == 0;
+        }
+
+        @Override
+        public long getSize() {
+            return content.length;
+        }
+
+        @Override
+        public byte[] getBytes() {
+            return content.clone();
+        }
+
+        @Override
+        public InputStream getInputStream() {
+            return new ByteArrayInputStream(content);
+        }
+
+        @Override
+        public void transferTo(java.io.File dest) throws IOException, IllegalStateException {
+            throw new UnsupportedOperationException("transferTo is not supported");
+        }
     }
 }

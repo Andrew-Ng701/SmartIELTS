@@ -54,15 +54,7 @@ public interface ReadingRecordMapper {
 
     Long countAdminActive(@Param("query") AdminReadingRecordPageQuery query);
 
-    List<ReadingRecord> pageAdminActive(@Param("query") AdminReadingRecordPageQuery query,
-                                        @Param("offset") Integer offset,
-                                        @Param("limit") Integer limit);
-
     Long countAdminDeleted(@Param("query") AdminReadingDeletedRecordPageQuery query);
-
-    List<ReadingRecord> pageAdminDeleted(@Param("query") AdminReadingDeletedRecordPageQuery query,
-                                         @Param("offset") Integer offset,
-                                         @Param("limit") Integer limit);
 
     void softDeleteById(@Param("id") Long id);
 

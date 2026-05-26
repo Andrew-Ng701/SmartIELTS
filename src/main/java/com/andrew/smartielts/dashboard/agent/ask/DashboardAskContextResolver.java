@@ -45,6 +45,11 @@ public class DashboardAskContextResolver {
         putIfPresent(result, DashboardAskContextKeys.CONTEXT_KEY_PASSAGE, passage);
         putIfPresent(result, DashboardAskContextKeys.CONTEXT_KEY_QUESTION, question);
         putIfPresent(result, DashboardAskContextKeys.CONTEXT_KEY_USER_ATTEMPT, userAttempt);
+        putIfPresent(
+                result,
+                DashboardAskContextKeys.CONTEXT_KEY_RECORD_QUESTIONS,
+                learningContext == null ? null : learningContext.get(DashboardLearningContextConstants.CONTEXT_KEY_RECORD_QUESTIONS)
+        );
 
         fillFromObjectRef(result, objectRef);
         fillFromLearningObjects(result, test, passage, question);

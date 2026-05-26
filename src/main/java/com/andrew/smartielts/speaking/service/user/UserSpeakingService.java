@@ -21,8 +21,6 @@ public interface UserSpeakingService {
 
     List<SpeakingQuestion> listAllSpeakingQuestion();
 
-    SpeakingQuestion getSpeakingQuestion(Long id);
-
     StartExamVO startExam(StartExamRequestDTO dto);
 
     NextQuestionVO nextQuestion(NextQuestionRequestDTO dto);

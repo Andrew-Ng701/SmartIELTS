@@ -1,6 +1,7 @@
 package com.andrew.smartielts.user.mapper;
 
 import com.andrew.smartielts.auth.domain.pojo.User;
+import com.andrew.smartielts.console.domain.vo.AdminConsoleLeaderboardVO;
 import com.andrew.smartielts.user.domain.query.admin.AdminDeletedUserPageQuery;
 import com.andrew.smartielts.user.domain.query.admin.AdminUserPageQuery;
 import com.andrew.smartielts.user.domain.vo.UserRecordCountVO;
@@ -35,6 +36,8 @@ public interface UserMapper {
     Long countDeletedUsers();
 
     List<UserRecordCountVO> selectRecordCountsByUserIds(@Param("userIds") List<Long> userIds);
+
+    List<AdminConsoleLeaderboardVO> selectConsoleLeaderboards(@Param("limit") Integer limit);
 
     void softDeleteById(@Param("id") Long id);
 

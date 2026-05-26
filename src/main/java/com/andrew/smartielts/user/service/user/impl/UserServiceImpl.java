@@ -5,7 +5,7 @@ import com.andrew.smartielts.common.constants.StorageBizConstants;
 import com.andrew.smartielts.common.storage.BucketType;
 import com.andrew.smartielts.common.storage.UploadResult;
 import com.andrew.smartielts.common.storage.service.OssStorageService;
-import com.andrew.smartielts.console.service.UserConsoleService;
+import com.andrew.smartielts.console.service.LearningConsoleQueryService;
 import com.andrew.smartielts.dashboard.domain.vo.UserModuleStatVO;
 import com.andrew.smartielts.dashboard.domain.vo.UserOverviewVO;
 import com.andrew.smartielts.user.domain.dto.UserProfileUpdateDTO;
@@ -52,7 +52,7 @@ public class UserServiceImpl implements UserService {
     private static final int IELTS_TARGET_SCORE_PART_COUNT = 4;
 
     private final UserMapper userMapper;
-    private final UserConsoleService userConsoleService;
+    private final LearningConsoleQueryService learningConsoleQueryService;
     private final OssStorageService ossStorageService;
 
     @Override
@@ -147,7 +147,7 @@ public class UserServiceImpl implements UserService {
         if (user == null) {
             throw new RuntimeException("User not found");
         }
-        return userConsoleService.overview(userId);
+        return learningConsoleQueryService.userOverview(userId);
     }
 
     @Override
@@ -161,7 +161,7 @@ public class UserServiceImpl implements UserService {
     }
 
     private UserStatsVO buildStats(Long userId) {
-        List<UserModuleStatVO> stats = userConsoleService.moduleStats(userId);
+        List<UserModuleStatVO> stats = learningConsoleQueryService.userModuleStats(userId);
 
         UserStatsVO vo = new UserStatsVO();
         vo.setUserId(userId);

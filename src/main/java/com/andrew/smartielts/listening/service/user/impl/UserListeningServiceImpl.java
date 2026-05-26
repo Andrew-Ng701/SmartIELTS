@@ -25,6 +25,7 @@ import com.andrew.smartielts.listening.domain.vo.ListeningPartVO;
 import com.andrew.smartielts.listening.domain.vo.ListeningQuestionVO;
 import com.andrew.smartielts.listening.domain.vo.ListeningRecordDetailVO;
 import com.andrew.smartielts.listening.domain.vo.ListeningRecordVO;
+import com.andrew.smartielts.listening.domain.vo.ListeningSectionScriptVO;
 import com.andrew.smartielts.listening.domain.vo.ListeningSessionVO;
 import com.andrew.smartielts.listening.domain.vo.ListeningTestDetailVO;
 import com.andrew.smartielts.listening.mapper.ListeningAnswerRecordMapper;
@@ -90,15 +91,6 @@ public class UserListeningServiceImpl implements UserListeningService {
                 .map(this::buildActiveTestDetailVO)
                 .filter(this::isFrontendReady)
                 .collect(Collectors.toList());
-    }
-
-    @Override
-    public ListeningTestDetailVO getTestDetail(Long testId) {
-        ListeningTestDetailVO detailVO = buildActiveTestDetailVO(testId);
-        if (!isFrontendReady(detailVO)) {
-            throw new RuntimeException("Listening test is not ready");
-        }
-        return detailVO;
     }
 
     @Override
@@ -313,6 +305,70 @@ public class UserListeningServiceImpl implements UserListeningService {
     }
 
     @Override
+    public ListeningSectionScriptVO getRecordSectionScript(Long recordId, Long userId, Integer sectionNumber) {
+        if (sectionNumber == null || sectionNumber < 1) {
+            throw new IllegalArgumentException("sectionNumber must be greater than or equal to 1");
+        }
+
+        ListeningRecord record = listeningRecordMapper.findAnyByIdForUser(recordId, userId);
+        if (record == null) {
+            throw new RuntimeException("Listening record not found");
+        }
+        requireActiveTest(record.getTestId());
+
+        List<TestPartGroup> partGroups = listeningPartGroupService.listActiveByTestId(record.getTestId());
+        if (partGroups == null) {
+            partGroups = new ArrayList<>();
+        }
+        List<TestPartGroup> sectionGroups = partGroups.stream()
+                .filter(Objects::nonNull)
+                .filter(item -> Objects.equals(item.getPartNumber(), sectionNumber))
+                .sorted(Comparator.comparing(TestPartGroup::getDisplayOrder, Comparator.nullsLast(Integer::compareTo))
+                        .thenComparing(TestPartGroup::getGroupNumber, Comparator.nullsLast(Integer::compareTo))
+                        .thenComparing(TestPartGroup::getId, Comparator.nullsLast(Long::compareTo)))
+                .collect(Collectors.toList());
+        if (sectionGroups.isEmpty()) {
+            throw new RuntimeException("listening_section_not_found");
+        }
+
+        Set<Long> sectionGroupIds = sectionGroups.stream()
+                .map(TestPartGroup::getId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        List<ListeningAudio> audios = listeningAudioService.listByTestId(record.getTestId()).stream()
+                .filter(Objects::nonNull)
+                .filter(item -> ListeningAudioConstants.AUDIO_SCOPE_PART_GROUP.equals(item.getAudioScope()))
+                .filter(item -> sectionGroupIds.contains(item.getPartGroupId()))
+                .sorted(Comparator.comparing(ListeningAudio::getId, Comparator.nullsLast(Long::compareTo)))
+                .collect(Collectors.toList());
+        if (audios.isEmpty()) {
+            audios = listeningAudioService.listByTestId(record.getTestId()).stream()
+                    .filter(Objects::nonNull)
+                    .filter(item -> ListeningAudioConstants.AUDIO_SCOPE_TEST.equals(item.getAudioScope()))
+                    .sorted(Comparator.comparing(ListeningAudio::getId, Comparator.nullsLast(Long::compareTo)))
+                    .collect(Collectors.toList());
+        }
+
+        ListeningSectionScriptVO vo = new ListeningSectionScriptVO();
+        vo.setRecordId(record.getId());
+        vo.setTestId(record.getTestId());
+        vo.setSectionNumber(sectionNumber);
+        vo.setSectionTitle(sectionGroups.stream()
+                .map(TestPartGroup::getTitle)
+                .map(this::trimToNull)
+                .filter(Objects::nonNull)
+                .findFirst()
+                .orElse("Section " + sectionNumber));
+        vo.setAudios(audios);
+        vo.setTranscriptText(audios.stream()
+                .map(ListeningAudio::getTranscriptText)
+                .map(this::trimToNull)
+                .filter(Objects::nonNull)
+                .collect(Collectors.joining("\n\n")));
+        return vo;
+    }
+
+    @Override
     @Transactional
     public void deleteRecord(Long recordId, Long userId) {
         ListeningRecord record = listeningRecordMapper.findAnyByIdForUser(recordId, userId);
@@ -365,12 +421,14 @@ public class UserListeningServiceImpl implements UserListeningService {
                         (a, b) -> a,
                         LinkedHashMap::new
                 ));
+        Map<Long, List<BizImageResource>> questionImageMap = findQuestionImageMap(questions);
 
         List<ListeningQuestionVO> questionVOList = questions.stream()
                 .map(this::toQuestionVO)
                 .peek(vo -> vo.setGroupImages(new ArrayList<>(
                         partGroupImageMap.getOrDefault(vo.getPartGroupId(), new ArrayList<>())
                 )))
+                .peek(vo -> vo.setImages(toBizImageResourceDTOList(questionImageMap.get(vo.getId()))))
                 .sorted(Comparator.comparing(ListeningQuestionVO::getDisplayOrder, Comparator.nullsLast(Integer::compareTo))
                         .thenComparing(ListeningQuestionVO::getQuestionNumber, Comparator.nullsLast(Integer::compareTo))
                         .thenComparing(ListeningQuestionVO::getId, Comparator.nullsLast(Long::compareTo)))
@@ -381,7 +439,10 @@ public class UserListeningServiceImpl implements UserListeningService {
         detailVO.setTitle(test.getTitle());
         detailVO.setTotalScore(test.getTotalScore());
         detailVO.setTimerMode(test.getTimerMode());
-        detailVO.setTotalSeconds(test.getTotalSeconds());
+        detailVO.setPrepSeconds(resolvePrepSeconds(test));
+        detailVO.setTotalSeconds(resolveTotalSeconds(test));
+        detailVO.setPrepMinutes(secondsToMinutes(detailVO.getPrepSeconds()));
+        detailVO.setTotalMinutes(secondsToMinutes(detailVO.getTotalSeconds()));
         detailVO.setAutoSubmit(test.getAutoSubmit());
         detailVO.setAllowPause(test.getAllowPause());
         detailVO.setAllowAudioSeek(resolveAllowAudioSeek(test));
@@ -485,6 +546,7 @@ public class UserListeningServiceImpl implements UserListeningService {
                         (a, b) -> a,
                         LinkedHashMap::new
                 ));
+        Map<Long, List<BizImageResource>> questionImageMap = findQuestionImageMap(questions);
 
         Map<Long, ListeningAnswerRecord> answerMap = answerRecords.stream()
                 .filter(Objects::nonNull)
@@ -496,6 +558,7 @@ public class UserListeningServiceImpl implements UserListeningService {
                 .peek(vo -> vo.setGroupImages(new ArrayList<>(
                         partGroupImageMap.getOrDefault(vo.getPartGroupId(), new ArrayList<>())
                 )))
+                .peek(vo -> vo.setImages(toBizImageResourceDTOList(questionImageMap.get(vo.getId()))))
                 .sorted(Comparator.comparing(ListeningQuestionVO::getDisplayOrder, Comparator.nullsLast(Integer::compareTo))
                         .thenComparing(ListeningQuestionVO::getQuestionNumber, Comparator.nullsLast(Integer::compareTo))
                         .thenComparing(ListeningQuestionVO::getId, Comparator.nullsLast(Long::compareTo)))
@@ -555,7 +618,10 @@ public class UserListeningServiceImpl implements UserListeningService {
         vo.setRecordStatus(record.getRecordStatus());
         vo.setStartedTime(record.getStartedTime());
         vo.setSubmittedTime(record.getSubmittedTime());
+        vo.setPrepSeconds(resolvePrepSeconds(test));
         vo.setTimeLimitSeconds(record.getTimeLimitSeconds());
+        vo.setPrepMinutes(secondsToMinutes(vo.getPrepSeconds()));
+        vo.setTotalMinutes(secondsToMinutes(vo.getTimeLimitSeconds()));
         vo.setTimeSpentSeconds(resolveCurrentTimeSpentSeconds(record));
         vo.setRemainingSeconds(resolveRemainingSeconds(record));
         vo.setAllowPause(resolveAllowPause(test));
@@ -665,7 +731,21 @@ public class UserListeningServiceImpl implements UserListeningService {
     }
 
     private Integer resolveTotalSeconds(ListeningTest test) {
-        return defaultInt(test == null ? null : test.getTotalSeconds(), ListeningConstants.DEFAULT_TOTAL_SECONDS);
+        if (test == null || test.getTotalSeconds() == null || test.getTotalSeconds() <= 0) {
+            return ListeningConstants.DEFAULT_TOTAL_SECONDS;
+        }
+        return test.getTotalSeconds();
+    }
+
+    private Integer resolvePrepSeconds(ListeningTest test) {
+        if (test == null || test.getPrepSeconds() == null || test.getPrepSeconds() < 0) {
+            return ListeningConstants.DEFAULT_PREP_SECONDS;
+        }
+        return test.getPrepSeconds();
+    }
+
+    private Integer secondsToMinutes(Integer seconds) {
+        return seconds == null ? null : seconds / 60;
     }
 
     private Integer resolveAllowPause(ListeningTest test) {
@@ -744,6 +824,25 @@ public class UserListeningServiceImpl implements UserListeningService {
             List<BizImageResource> images = imageMap == null ? null : imageMap.get(partGroup.getId());
             partGroup.setImages(images == null ? new ArrayList<>() : new ArrayList<>(images));
         }
+    }
+
+    private Map<Long, List<BizImageResource>> findQuestionImageMap(List<ListeningQuestion> questions) {
+        List<Long> questionIds = questions == null
+                ? new ArrayList<>()
+                : questions.stream()
+                .filter(Objects::nonNull)
+                .map(ListeningQuestion::getId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .collect(Collectors.toList());
+        if (questionIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        Map<Long, List<BizImageResource>> imageMap = bizImageResourceService.listByTargets(
+                ListeningAudioConstants.TARGET_TYPE_LISTENING_QUESTION,
+                questionIds
+        );
+        return imageMap == null ? Collections.emptyMap() : imageMap;
     }
 
     private List<ListeningPartVO> buildPartVOList(List<TestPartGroup> partGroups,

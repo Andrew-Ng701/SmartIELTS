@@ -3,8 +3,6 @@ package com.andrew.smartielts.reading.controller.user;
 import com.andrew.smartielts.common.resultDTO.Result;
 import com.andrew.smartielts.reading.domain.dto.ReadingSessionActionDTO;
 import com.andrew.smartielts.reading.domain.dto.ReadingSubmitDTO;
-import com.andrew.smartielts.reading.domain.query.user.UserReadingDeletedRecordPageQuery;
-import com.andrew.smartielts.reading.domain.query.user.UserReadingRecordPageQuery;
 import com.andrew.smartielts.reading.service.user.UserReadingService;
 import com.andrew.smartielts.utils.SecurityUtils;
 import io.swagger.v3.oas.annotations.Operation;
@@ -29,12 +27,6 @@ public class UserReadingController {
     @GetMapping("/tests")
     public Result<?> listTests() {
         return Result.success(userReadingService.listTests());
-    }
-
-    @Operation(summary = "Get test detail")
-    @GetMapping("/tests/{testId}")
-    public Result<?> getTestDetail(@PathVariable Long testId) {
-        return Result.success(userReadingService.getTestDetail(testId));
     }
 
     @Operation(summary = "Start reading test")
@@ -71,40 +63,4 @@ public class UserReadingController {
         return Result.success(userReadingService.submit(testId, dto));
     }
 
-    @Operation(summary = "User reading active records overview")
-    @PostMapping("/records/overview")
-    public Result<?> pageActiveRecords(@Valid @RequestBody UserReadingRecordPageQuery query) {
-        Long userId = SecurityUtils.getCurrentUserId();
-        return Result.success(userReadingService.pageActiveRecords(userId, query));
-    }
-
-    @Operation(summary = "User reading deleted records overview")
-    @PostMapping("/records/deleted/overview")
-    public Result<?> pageDeletedRecords(@Valid @RequestBody UserReadingDeletedRecordPageQuery query) {
-        Long userId = SecurityUtils.getCurrentUserId();
-        return Result.success(userReadingService.pageDeletedRecords(userId, query));
-    }
-
-    @Operation(summary = "Reading record detail")
-    @GetMapping("/records/{recordId}")
-    public Result<?> getRecord(@PathVariable Long recordId) {
-        Long userId = SecurityUtils.getCurrentUserId();
-        return Result.success(userReadingService.getRecord(recordId, userId));
-    }
-
-    @Operation(summary = "Delete my reading record")
-    @DeleteMapping("/records/{recordId}")
-    public Result<?> deleteRecord(@PathVariable Long recordId) {
-        Long userId = SecurityUtils.getCurrentUserId();
-        userReadingService.deleteRecord(recordId, userId);
-        return Result.success();
-    }
-
-    @Operation(summary = "Restore my reading record")
-    @PutMapping("/records/{recordId}/restore")
-    public Result<?> restoreRecord(@PathVariable Long recordId) {
-        Long userId = SecurityUtils.getCurrentUserId();
-        userReadingService.restoreRecord(recordId, userId);
-        return Result.success();
-    }
 }

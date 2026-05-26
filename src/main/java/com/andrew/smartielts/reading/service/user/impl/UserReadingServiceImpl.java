@@ -107,15 +107,6 @@ public class UserReadingServiceImpl implements UserReadingService {
     }
 
     @Override
-    public ReadingTestDetailVO getTestDetail(Long testId) {
-        ReadingTestDetailVO detailVO = buildActiveTestDetailVO(testId);
-        if (!isFrontendReady(detailVO)) {
-            throw new RuntimeException("Reading test is not ready");
-        }
-        return detailVO;
-    }
-
-    @Override
     @Transactional
     public ReadingSessionVO start(Long testId) {
         Long userId = SecurityUtils.getCurrentUserId();
@@ -360,7 +351,10 @@ public class UserReadingServiceImpl implements UserReadingService {
         detailVO.setTitle(test.getTitle());
         detailVO.setTotalScore(test.getTotalScore());
         detailVO.setTimerMode(normalizeTimerMode(test.getTimerMode()));
+        detailVO.setPrepSeconds(resolvePrepSeconds(test));
         detailVO.setTotalSeconds(resolveReadingTimeLimitSeconds(test));
+        detailVO.setPrepMinutes(secondsToMinutes(detailVO.getPrepSeconds()));
+        detailVO.setTotalMinutes(secondsToMinutes(detailVO.getTotalSeconds()));
         detailVO.setAutoSubmit(resolveAutoSubmit(test));
         detailVO.setAllowPause(resolveAllowPause(test));
         detailVO.setParts(buildPartVOList(partGroups, passages, questionVOList));
@@ -461,6 +455,7 @@ public class UserReadingServiceImpl implements UserReadingService {
 
     private List<ReadingQuestionVO> buildQuestionVOList(List<ReadingQuestion> questions, List<TestPartGroup> partGroups) {
         Map<Long, TestPartGroup> groupMap = toGroupMap(partGroups);
+        Map<Long, List<BizImageResource>> questionImageMap = findQuestionImageMap(questions);
         Map<Long, List<BizImageResourceDTO>> groupImageMap = safeList(partGroups).stream()
                 .filter(Objects::nonNull)
                 .filter(item -> item.getId() != null)
@@ -477,10 +472,28 @@ public class UserReadingServiceImpl implements UserReadingService {
                 .peek(vo -> vo.setGroupImages(new ArrayList<>(
                         groupImageMap.getOrDefault(vo.getPartGroupId(), new ArrayList<>())
                 )))
+                .peek(vo -> vo.setImages(toBizImageResourceDTOList(questionImageMap.get(vo.getId()))))
                 .sorted(Comparator.comparing(ReadingQuestionVO::getDisplayOrder, Comparator.nullsLast(Integer::compareTo))
                         .thenComparing(ReadingQuestionVO::getQuestionNumber, Comparator.nullsLast(Integer::compareTo))
                         .thenComparing(ReadingQuestionVO::getId, Comparator.nullsLast(Long::compareTo)))
                 .collect(Collectors.toList());
+    }
+
+    private Map<Long, List<BizImageResource>> findQuestionImageMap(List<ReadingQuestion> questions) {
+        List<Long> questionIds = safeList(questions).stream()
+                .filter(Objects::nonNull)
+                .map(ReadingQuestion::getId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .collect(Collectors.toList());
+        if (questionIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        Map<Long, List<BizImageResource>> imageMap = bizImageResourceService.listByTargets(
+                ReadingStorageConstants.TARGET_TYPE_READING_QUESTION,
+                questionIds
+        );
+        return imageMap == null ? Collections.emptyMap() : imageMap;
     }
 
     private List<ReadingPartVO> buildPartVOList(List<TestPartGroup> partGroups,
@@ -948,7 +961,10 @@ public class UserReadingServiceImpl implements UserReadingService {
         vo.setRecordStatus(record.getRecordStatus());
         vo.setStartedTime(record.getStartedTime());
         vo.setSubmittedTime(record.getSubmittedTime());
+        vo.setPrepSeconds(resolvePrepSeconds(test));
         vo.setTimeLimitSeconds(record.getTimeLimitSeconds());
+        vo.setPrepMinutes(secondsToMinutes(vo.getPrepSeconds()));
+        vo.setTotalMinutes(secondsToMinutes(vo.getTimeLimitSeconds()));
         vo.setTimeSpentSeconds(resolveCurrentTimeSpentSeconds(record));
         vo.setRemainingSeconds(resolveRemainingSeconds(record));
         vo.setAllowPause(resolveAllowPause(test));
@@ -1084,6 +1100,17 @@ public class UserReadingServiceImpl implements UserReadingService {
         return ReadingConstants.TIMER_MODE_TEST_LEVEL.equals(normalizeTimerMode(test.getTimerMode()))
                 ? ReadingConstants.DEFAULT_TOTAL_SECONDS
                 : null;
+    }
+
+    private Integer resolvePrepSeconds(ReadingTest test) {
+        if (test == null || test.getPrepSeconds() == null || test.getPrepSeconds() < 0) {
+            return ReadingConstants.DEFAULT_PREP_SECONDS;
+        }
+        return test.getPrepSeconds();
+    }
+
+    private Integer secondsToMinutes(Integer seconds) {
+        return seconds == null ? null : seconds / 60;
     }
 
     private Integer resolveAutoSubmit(ReadingTest test) {

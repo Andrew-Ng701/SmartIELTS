@@ -1,7 +1,7 @@
 package com.andrew.smartielts.console.controller;
 
-import com.andrew.smartielts.admin.domain.vo.AdminOverviewVO;
 import com.andrew.smartielts.common.resultDTO.Result;
+import com.andrew.smartielts.console.domain.vo.AdminConsoleVO;
 import com.andrew.smartielts.console.service.AdminConsoleService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
@@ -22,9 +22,9 @@ public class AdminConsoleController {
 
     private final AdminConsoleService adminConsoleService;
 
-    @Operation(summary = "Admin console overview")
-    @GetMapping("/overview")
-    public Result<AdminOverviewVO> overview() {
-        return Result.success(adminConsoleService.overview());
+    @Operation(summary = "Admin full console")
+    @GetMapping
+    public Result<AdminConsoleVO> console() {
+        return Result.success(adminConsoleService.console());
     }
 }

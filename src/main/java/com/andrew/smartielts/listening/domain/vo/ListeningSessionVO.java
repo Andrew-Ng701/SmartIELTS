@@ -12,7 +12,10 @@ public class ListeningSessionVO {
     private String recordStatus;
     private LocalDateTime startedTime;
     private LocalDateTime submittedTime;
+    private Integer prepSeconds;
     private Integer timeLimitSeconds;
+    private Integer prepMinutes;
+    private Integer totalMinutes;
     private Integer timeSpentSeconds;
     private Integer remainingSeconds;
     private Integer allowPause;

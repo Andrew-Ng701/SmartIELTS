@@ -21,6 +21,7 @@ import java.math.BigDecimal;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 
 @Service
@@ -55,6 +56,10 @@ public class DashboardTemplateAnswerComposeService implements DashboardAnswerCom
 
         if (data instanceof List<?> list) {
             return buildListAnswer(request, list);
+        }
+
+        if (data instanceof Map<?, ?> map) {
+            return buildDashboardPayloadSummary(request, map);
         }
 
         String answer = "我已完成查詢，下面是相關資料結果。";
@@ -275,6 +280,151 @@ public class DashboardTemplateAnswerComposeService implements DashboardAnswerCom
                 .answer(answer)
                 .suggestions(smartSuggestions(request, answer, list))
                 .build();
+    }
+
+    private DashboardAnswerComposeResult buildDashboardPayloadSummary(DashboardAnswerComposeRequest request,
+                                                                      Map<?, ?> data) {
+        Object overview = data.get("overview");
+        Object progressSummary = data.get("progressSummary");
+        Object moduleStats = data.get("moduleStats");
+        Object recentRecords = data.get("recentRecords");
+
+        String answer = isEnglishResponse(request)
+                ? buildEnglishPayloadSummary(overview, progressSummary, moduleStats, recentRecords)
+                : buildChinesePayloadSummary(overview, progressSummary, moduleStats, recentRecords);
+
+        return DashboardAnswerComposeResult.builder()
+                .answer(answer)
+                .suggestions(smartSuggestions(request, answer, data))
+                .build();
+    }
+
+    private String buildEnglishPayloadSummary(Object overview,
+                                              Object progressSummary,
+                                              Object moduleStats,
+                                              Object recentRecords) {
+        long activeRecords = longValue(overview, "totalActiveRecords");
+        long deletedRecords = longValue(overview, "totalDeletedRecords");
+        BigDecimal overallAverage = decimalValue(progressSummary, "overallAverageScore");
+        int moduleCount = listSize(moduleStats);
+        int recentCount = listSize(recentRecords);
+
+        StringBuilder answer = new StringBuilder();
+        answer.append("Your dashboard shows ")
+                .append(activeRecords)
+                .append(" active practice records");
+        if (deletedRecords > 0) {
+            answer.append(" and ").append(deletedRecords).append(" recoverable records");
+        }
+        answer.append(". The current overall average is ")
+                .append(formatDecimal(overallAverage))
+                .append(" across ")
+                .append(moduleCount == 0 ? "the IELTS modules" : moduleCount + " tracked modules")
+                .append(".");
+        if (recentCount > 0) {
+            answer.append(" I found ").append(recentCount)
+                    .append(" recent records to use for next-step analysis.");
+        } else {
+            answer.append(" There are no recent scored records in this snapshot yet.");
+        }
+        return answer.toString();
+    }
+
+    private String buildChinesePayloadSummary(Object overview,
+                                              Object progressSummary,
+                                              Object moduleStats,
+                                              Object recentRecords) {
+        long activeRecords = longValue(overview, "totalActiveRecords");
+        long deletedRecords = longValue(overview, "totalDeletedRecords");
+        BigDecimal overallAverage = decimalValue(progressSummary, "overallAverageScore");
+        int moduleCount = listSize(moduleStats);
+        int recentCount = listSize(recentRecords);
+
+        StringBuilder answer = new StringBuilder();
+        answer.append("你的 dashboard 目前有 ")
+                .append(activeRecords)
+                .append(" 筆有效練習紀錄");
+        if (deletedRecords > 0) {
+            answer.append("，另有 ").append(deletedRecords).append(" 筆可復原紀錄");
+        }
+        answer.append("。目前整體平均分是 ")
+                .append(formatDecimal(overallAverage))
+                .append("，統計範圍涵蓋 ")
+                .append(moduleCount == 0 ? "IELTS 各模組" : moduleCount + " 個模組")
+                .append("。");
+        if (recentCount > 0) {
+            answer.append("我也找到 ").append(recentCount).append(" 筆近期紀錄，可用來判斷下一步練習重點。");
+        } else {
+            answer.append("這份快照暫時沒有近期已評分紀錄。");
+        }
+        return answer.toString();
+    }
+
+    private boolean isEnglishResponse(DashboardAnswerComposeRequest request) {
+        return request != null
+                && request.getResponseLanguage() != null
+                && request.getResponseLanguage().trim().toLowerCase(Locale.ROOT).startsWith("en");
+    }
+
+    private int listSize(Object value) {
+        return value instanceof List<?> list ? list.size() : 0;
+    }
+
+    private long longValue(Object source, String key) {
+        Object value = propertyValue(source, key);
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        if (value instanceof String text && !text.isBlank()) {
+            try {
+                return Long.parseLong(text.trim());
+            } catch (NumberFormatException ignored) {
+                return 0L;
+            }
+        }
+        return 0L;
+    }
+
+    private BigDecimal decimalValue(Object source, String key) {
+        Object value = propertyValue(source, key);
+        if (value instanceof BigDecimal decimal) {
+            return decimal;
+        }
+        if (value instanceof Number number) {
+            return BigDecimal.valueOf(number.doubleValue());
+        }
+        if (value instanceof String text && !text.isBlank()) {
+            try {
+                return new BigDecimal(text.trim());
+            } catch (NumberFormatException ignored) {
+                return BigDecimal.ZERO;
+            }
+        }
+        return BigDecimal.ZERO;
+    }
+
+    private Object propertyValue(Object source, String key) {
+        if (source instanceof Map<?, ?> map) {
+            return map.get(key);
+        }
+        if (source instanceof UserOverviewVO vo) {
+            return switch (key) {
+                case "totalActiveRecords" -> vo.getTotalActiveRecords();
+                case "totalDeletedRecords" -> vo.getTotalDeletedRecords();
+                default -> null;
+            };
+        }
+        if (source instanceof AdminOverviewVO vo) {
+            return switch (key) {
+                case "totalActiveRecords" -> vo.getTotalActiveRecords();
+                case "totalDeletedRecords" -> vo.getTotalDeletedRecords();
+                default -> null;
+            };
+        }
+        if (source instanceof UserProgressSummaryVO vo) {
+            return "overallAverageScore".equals(key) ? vo.getOverallAverageScore() : null;
+        }
+        return null;
     }
 
     private List<String> smartSuggestions(DashboardAnswerComposeRequest request, String answer, Object data) {

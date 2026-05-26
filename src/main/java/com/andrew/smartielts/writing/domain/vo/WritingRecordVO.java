@@ -24,6 +24,8 @@ public class WritingRecordVO {
 
     private String taskType;
 
+    private String chartType;
+
     private String inputType;
 
     private String answerPreview;

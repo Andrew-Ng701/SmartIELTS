@@ -21,5 +21,6 @@ public interface DashboardSqlGenerationService {
                                         String originalQuery,
                                         DashboardIntentParseResult intent,
                                         DashboardSqlGenerationResult sqlPlan,
-                                        List<Map<String, Object>> rows);
+                                        List<Map<String, Object>> rows,
+                                        Map<String, Object> context);
 }

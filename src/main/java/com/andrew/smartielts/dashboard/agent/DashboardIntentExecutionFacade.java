@@ -1,6 +1,8 @@
 package com.andrew.smartielts.dashboard.agent;
 
 import com.andrew.smartielts.dashboard.agent.answer.DashboardAnswerComposeService;
+import com.andrew.smartielts.dashboard.agent.answer.DashboardSuggestionPerspectiveNormalizer;
+import com.andrew.smartielts.dashboard.agent.answer.DashboardUserTargetScoreContext;
 import com.andrew.smartielts.dashboard.agent.answer.dto.DashboardAnswerComposeRequest;
 import com.andrew.smartielts.dashboard.agent.answer.dto.DashboardAnswerComposeResult;
 import com.andrew.smartielts.dashboard.agent.ask.DashboardAskContextResolver;
@@ -13,6 +15,8 @@ import com.andrew.smartielts.dashboard.agent.intent.DashboardIntentQueryMode;
 import com.andrew.smartielts.dashboard.agent.intent.DashboardIntentTargetScope;
 import com.andrew.smartielts.dashboard.agent.intent.dto.DashboardIntentParseResult;
 import com.andrew.smartielts.dashboard.controller.dto.DashboardAskClientContext;
+import com.andrew.smartielts.dashboard.controller.dto.DashboardAskConversationMessage;
+import com.andrew.smartielts.dashboard.controller.dto.DashboardAskObjectRef;
 import com.andrew.smartielts.dashboard.controller.dto.DashboardAskPreloadedPayload;
 import com.andrew.smartielts.dashboard.controller.dto.DashboardAskRequest;
 import com.andrew.smartielts.dashboard.controller.dto.DashboardAssistantResponse;
@@ -48,6 +52,9 @@ public class DashboardIntentExecutionFacade {
     private static final String META_KEY_PRELOAD_SOURCE = "preloadSource";
     private static final String META_KEY_ELAPSED_MS = "elapsedMs";
     private static final String META_KEY_REVIEW_SUMMARY = "reviewSummary";
+    private static final String META_KEY_ERROR_MESSAGE = "errorMessage";
+    private static final String META_KEY_OBJECT_REF = "objectRef";
+    private static final String META_KEY_CONTEXT_CARRIED = "contextCarriedFromHistory";
 
     private final DashboardAskDecisionService dashboardAskDecisionService;
     private final DashboardAskContextResolver dashboardAskContextResolver;
@@ -61,41 +68,40 @@ public class DashboardIntentExecutionFacade {
                                           Long operatorUserId,
                                           Long targetUserId,
                                           DashboardAskRequest request) {
+        return ask(role, operatorUserId, targetUserId, request, null);
+    }
+
+    public DashboardAssistantResponse ask(String role,
+                                          Long operatorUserId,
+                                          Long targetUserId,
+                                          DashboardAskRequest request,
+                                          DashboardAskProgressListener progressListener) {
 
         long startedAt = System.currentTimeMillis();
-        DashboardAskRequest safeRequest = request == null ? new DashboardAskRequest() : request;
+        DashboardAskRequest safeRequest = recoverConversationObjectRef(request == null ? new DashboardAskRequest() : request);
+        try {
+            return askInternal(role, operatorUserId, targetUserId, safeRequest, progressListener, startedAt);
+        } catch (Exception ex) {
+            log.warn("dashboard.ask.failed role={} operatorUserId={} targetUserId={} query={} message={}",
+                    role, operatorUserId, targetUserId, safeString(safeRequest.getQuery()), ex.getMessage());
+            log.debug("dashboard.ask.failed.stacktrace", ex);
+            return buildUnhandledAskErrorResponse(role, operatorUserId, targetUserId, safeRequest, startedAt, ex);
+        }
+    }
+
+    private DashboardAssistantResponse askInternal(String role,
+                                                   Long operatorUserId,
+                                                   Long targetUserId,
+                                                   DashboardAskRequest safeRequest,
+                                                   DashboardAskProgressListener progressListener,
+                                                   long startedAt) {
         Long resolvedTargetUserId = resolveTargetUserId(role, operatorUserId, targetUserId, safeRequest);
 
-        DashboardAskPreloadedPayload mergedPayload = safeRequest.getPreloadedPayload();
-        String preloadSource = mergedPayload != null ? "request" : "none";
-
-        if (mergedPayload == null) {
-            String pageName = nonBlank(extractPageName(safeRequest.getClientContext()),
-                    ROLE_USER.equalsIgnoreCase(role) ? "user_overview" : "admin_overview");
-
-            DashboardAskPreloadedPayload cachedPayload = dashboardPreloadService.getCached(
-                    role,
-                    operatorUserId,
-                    resolvedTargetUserId,
-                    pageName,
-                    safeRequest.getObjectRef(),
-                    safeMap(safeRequest.getContext())
-            );
-            if (cachedPayload != null) {
-                mergedPayload = cachedPayload;
-                preloadSource = "redis";
-            } else {
-                mergedPayload = dashboardPreloadService.preload(
-                        role,
-                        operatorUserId,
-                        resolvedTargetUserId,
-                        pageName,
-                        safeRequest.getObjectRef(),
-                        safeMap(safeRequest.getContext())
-                );
-                preloadSource = mergedPayload != null ? "database" : "none";
-            }
-        }
+        DashboardAskPreloadResolution preloadResolution = resolvePreloadedPayload(
+                role, operatorUserId, resolvedTargetUserId, safeRequest
+        );
+        DashboardAskPreloadedPayload mergedPayload = preloadResolution.payload();
+        String preloadSource = preloadResolution.source();
 
         Map<String, Object> learningContext = resolveLearningContext(
                 role, operatorUserId, resolvedTargetUserId, safeRequest, mergedPayload
@@ -110,6 +116,7 @@ public class DashboardIntentExecutionFacade {
                         .operatorUserId(operatorUserId)
                         .targetUserId(resolvedTargetUserId)
                         .query(safeString(safeRequest.getQuery()))
+                        .conversationHistory(safeConversationHistory(safeRequest.getConversationHistory()))
                         .responseLanguage(resolveResponseLanguage(safeRequest))
                         .askScene(safeString(safeRequest.getAskScene()))
                         .responseMode(safeString(safeRequest.getResponseMode()))
@@ -122,6 +129,9 @@ public class DashboardIntentExecutionFacade {
                         .build()
         ));
 
+        boolean requiresDatabaseQuery = shouldQueryDatabase(decision, mergedPayload, safeRequest);
+        notifyDecisionResolved(progressListener, safeRequest, decision, mergedPayload, preloadSource, requiresDatabaseQuery);
+
         if (ACTION_DIRECT_ANSWER.equalsIgnoreCase(decision.getAction()) && Boolean.TRUE.equals(decision.getSufficient())) {
             DashboardAnswerComposeResult composed = composeDirectAnswer(
                     role, operatorUserId, resolvedTargetUserId, safeRequest, mergedPayload, learningContext, mergedContext
@@ -131,6 +141,7 @@ public class DashboardIntentExecutionFacade {
             List<String> finalSuggestions = composed != null && composed.getSuggestions() != null && !composed.getSuggestions().isEmpty()
                     ? composed.getSuggestions()
                     : safeList(decision.getSuggestions());
+            finalSuggestions = DashboardSuggestionPerspectiveNormalizer.normalize(finalSuggestions);
 
             Object responseData = buildDirectAnswerData(safeRequest, mergedPayload, learningContext, mergedContext);
             if (responseData instanceof Map<?, ?> rawMap) {
@@ -161,6 +172,8 @@ public class DashboardIntentExecutionFacade {
                                     META_KEY_SUFFICIENT, true,
                                     META_KEY_USED_PRELOAD, mergedPayload != null,
                                     META_KEY_PRELOAD_SOURCE, preloadSource,
+                                    META_KEY_OBJECT_REF, safeRequest.getObjectRef(),
+                                    META_KEY_CONTEXT_CARRIED, hasCarriedObjectRef(safeRequest),
                                     META_KEY_ELAPSED_MS, System.currentTimeMillis() - startedAt,
                                     META_KEY_REVIEW_SUMMARY,  resolveLocalizedReviewSummary(safeRequest, decision, false)
                             ),
@@ -178,13 +191,15 @@ public class DashboardIntentExecutionFacade {
                             META_KEY_ASK_SCENE, safeString(safeRequest.getAskScene()),
                             "objectRef", safeRequest.getObjectRef()
                     ))
-                    .suggestions(safeList(decision.getSuggestions()))
+                    .suggestions(DashboardSuggestionPerspectiveNormalizer.normalize(safeList(decision.getSuggestions())))
                     .meta(mergeMeta(
                             mapOfNullable(
                                     META_KEY_ANSWER_MODE, ANSWER_MODE_CLARIFICATION,
                                     META_KEY_SUFFICIENT, false,
                                     META_KEY_USED_PRELOAD, mergedPayload != null,
                                     META_KEY_PRELOAD_SOURCE, preloadSource,
+                                    META_KEY_OBJECT_REF, safeRequest.getObjectRef(),
+                                    META_KEY_CONTEXT_CARRIED, hasCarriedObjectRef(safeRequest),
                                     META_KEY_ELAPSED_MS, System.currentTimeMillis() - startedAt,
                                     META_KEY_ACTION, safeString(decision.getAction()),
                                     META_KEY_REVIEW_SUMMARY, resolveLocalizedReviewSummary(safeRequest, decision, false)
@@ -194,7 +209,7 @@ public class DashboardIntentExecutionFacade {
                     .build();
         }
 
-        if (!shouldQueryDatabase(decision, mergedPayload, safeRequest)) {
+        if (!requiresDatabaseQuery) {
             DashboardAnswerComposeResult composed = composeDirectAnswer(
                     role, operatorUserId, resolvedTargetUserId, safeRequest, mergedPayload, learningContext, mergedContext
             );
@@ -219,12 +234,15 @@ public class DashboardIntentExecutionFacade {
             return DashboardAssistantResponse.builder()
                     .answer(nonBlank(composed == null ? null : composed.getAnswer(), "我先根據目前快照整理可用資訊。"))
                     .data(responseData)
-                    .suggestions(composed == null ? new ArrayList<>() : safeList(composed.getSuggestions()))
+                    .suggestions(DashboardSuggestionPerspectiveNormalizer.normalize(
+                            composed == null ? new ArrayList<>() : safeList(composed.getSuggestions())))
                     .meta(mapOfNullable(
                             META_KEY_ANSWER_MODE, ANSWER_MODE_TEMPLATE_DIRECT,
                             META_KEY_ACTION, "REDIS_DIRECT_FALLBACK",
                             META_KEY_USED_PRELOAD, mergedPayload != null,
                             META_KEY_PRELOAD_SOURCE, preloadSource,
+                            META_KEY_OBJECT_REF, safeRequest.getObjectRef(),
+                            META_KEY_CONTEXT_CARRIED, hasCarriedObjectRef(safeRequest),
                             META_KEY_ELAPSED_MS, System.currentTimeMillis() - startedAt,
                             META_KEY_REVIEW_SUMMARY, resolveLocalizedReviewSummary(safeRequest, decision, true)
                     ))
@@ -234,30 +252,428 @@ public class DashboardIntentExecutionFacade {
         DashboardIntentParseResult fallbackIntent = toFallbackStructuredIntent(role, resolvedTargetUserId, decision);
         permissionValidator.validate(role, operatorUserId, fallbackIntent);
 
-        return dashboardStructuredAiQueryService.execute(
-                role,
-                operatorUserId,
-                resolvedTargetUserId,
-                safeRequest.getQuery(),
-                fallbackIntent,
-                mergeContext(
-                        mergedContext,
-                        mapOfNullable(
-                                META_KEY_ASK_SCENE, safeRequest.getAskScene(),
-                                "responseMode", safeRequest.getResponseMode(),
-                                "objectRef", safeRequest.getObjectRef(),
-                                "preloadedPayload", mergedPayload,
-                                "clientContext", safeRequest.getClientContext(),
-                                "learningContext", learningContext,
-                                "questionContext", resolveQuestionContext(mergedPayload, mergedContext),
-                                "decisionReviewSummary", resolveLocalizedReviewSummary(safeRequest, decision, false),
-                                "requiredDataScopes", safeList(decision.getRequiredDataScopes()),
-                                META_KEY_ANSWER_MODE, ANSWER_MODE_FALLBACK_SQL,
-                                META_KEY_ACTION, nonBlank(decision.getAction(), ACTION_GENERATE_SQL),
-                                META_KEY_PRELOAD_SOURCE, preloadSource
-                        )
+        Map<String, Object> structuredContext = mergeContext(
+                mergedContext,
+                mapOfNullable(
+                        META_KEY_ASK_SCENE, safeRequest.getAskScene(),
+                        "responseMode", safeRequest.getResponseMode(),
+                        "objectRef", safeRequest.getObjectRef(),
+                        "conversationHistory", safeConversationHistory(safeRequest.getConversationHistory()),
+                        "preloadedPayload", mergedPayload,
+                        "clientContext", safeRequest.getClientContext(),
+                        "learningContext", learningContext,
+                        "questionContext", resolveQuestionContext(mergedPayload, mergedContext),
+                        "decisionReviewSummary", resolveLocalizedReviewSummary(safeRequest, decision, false),
+                        "requiredDataScopes", safeList(decision.getRequiredDataScopes()),
+                        META_KEY_ANSWER_MODE, ANSWER_MODE_FALLBACK_SQL,
+                        META_KEY_ACTION, nonBlank(decision.getAction(), ACTION_GENERATE_SQL),
+                        META_KEY_PRELOAD_SOURCE, preloadSource,
+                        META_KEY_OBJECT_REF, safeRequest.getObjectRef(),
+                        META_KEY_CONTEXT_CARRIED, hasCarriedObjectRef(safeRequest)
                 )
         );
+
+        try {
+            return dashboardStructuredAiQueryService.execute(
+                    role,
+                    operatorUserId,
+                    resolvedTargetUserId,
+                    safeRequest.getQuery(),
+                    fallbackIntent,
+                    structuredContext
+            );
+        } catch (Exception ex) {
+            log.warn("dashboard.ask.structured_fallback.failed role={} operatorUserId={} targetUserId={} query={} message={}",
+                    role, operatorUserId, resolvedTargetUserId, safeString(safeRequest.getQuery()), ex.getMessage());
+            log.debug("dashboard.ask.structured_fallback.failed.stacktrace", ex);
+            return buildStructuredFallbackErrorResponse(
+                    role,
+                    operatorUserId,
+                    resolvedTargetUserId,
+                    safeRequest,
+                    mergedPayload,
+                    learningContext,
+                    mergedContext,
+                    preloadSource,
+                    startedAt,
+                    decision,
+                    ex
+            );
+        }
+    }
+
+    private DashboardAskRequest recoverConversationObjectRef(DashboardAskRequest request) {
+        if (request == null) {
+            return new DashboardAskRequest();
+        }
+        DashboardAskObjectRef current = request.getObjectRef();
+        if (isUsableObjectRef(current)) {
+            return request;
+        }
+
+        DashboardAskObjectRef recovered = findObjectRefFromContext(request.getContext());
+        if (!isUsableObjectRef(recovered)) {
+            recovered = findObjectRefFromConversation(request.getConversationHistory());
+        }
+        if (!isUsableObjectRef(recovered)) {
+            return request;
+        }
+
+        request.setObjectRef(mergeObjectRef(current, recovered));
+        Map<String, Object> context = safeMap(request.getContext());
+        context.put(META_KEY_CONTEXT_CARRIED, true);
+        request.setContext(context);
+        return request;
+    }
+
+    private DashboardAskObjectRef findObjectRefFromContext(Map<String, Object> context) {
+        if (context == null || context.isEmpty()) {
+            return null;
+        }
+        DashboardAskObjectRef direct = extractObjectRef(context.get(META_KEY_OBJECT_REF));
+        if (isUsableObjectRef(direct)) {
+            return direct;
+        }
+        DashboardAskObjectRef dataRef = extractNestedObjectRef(context.get("data"));
+        if (isUsableObjectRef(dataRef)) {
+            return dataRef;
+        }
+        return extractNestedObjectRef(context.get("questionContext"));
+    }
+
+    private DashboardAskObjectRef findObjectRefFromConversation(List<DashboardAskConversationMessage> history) {
+        if (history == null || history.isEmpty()) {
+            return null;
+        }
+        for (int i = history.size() - 1; i >= 0; i--) {
+            DashboardAskConversationMessage message = history.get(i);
+            if (message == null || message.getMeta() == null || message.getMeta().isEmpty()) {
+                continue;
+            }
+            DashboardAskObjectRef direct = extractObjectRef(message.getMeta().get(META_KEY_OBJECT_REF));
+            if (isUsableObjectRef(direct)) {
+                return direct;
+            }
+            DashboardAskObjectRef nested = extractNestedObjectRef(message.getMeta().get("data"));
+            if (isUsableObjectRef(nested)) {
+                return nested;
+            }
+            nested = extractNestedObjectRef(message.getMeta().get("response"));
+            if (isUsableObjectRef(nested)) {
+                return nested;
+            }
+        }
+        return null;
+    }
+
+    @SuppressWarnings("unchecked")
+    private DashboardAskObjectRef extractNestedObjectRef(Object value) {
+        if (!(value instanceof Map<?, ?> rawMap)) {
+            return extractObjectRef(value);
+        }
+        Map<String, Object> map = (Map<String, Object>) rawMap;
+        DashboardAskObjectRef direct = extractObjectRef(map.get(META_KEY_OBJECT_REF));
+        if (isUsableObjectRef(direct)) {
+            return direct;
+        }
+        direct = extractObjectRef(map.get("object_ref"));
+        if (isUsableObjectRef(direct)) {
+            return direct;
+        }
+        direct = extractObjectRef(map.get("questionContext"));
+        if (isUsableObjectRef(direct)) {
+            return direct;
+        }
+        return extractObjectRef(map);
+    }
+
+    @SuppressWarnings("unchecked")
+    private DashboardAskObjectRef extractObjectRef(Object value) {
+        if (value instanceof DashboardAskObjectRef objectRef) {
+            return objectRef;
+        }
+        if (!(value instanceof Map<?, ?> rawMap)) {
+            return null;
+        }
+        Map<String, Object> map = (Map<String, Object>) rawMap;
+        DashboardAskObjectRef objectRef = new DashboardAskObjectRef();
+        objectRef.setModule(stringValue(firstPresent(map, "module", "moduleName")));
+        objectRef.setObjectType(stringValue(firstPresent(map, "objectType", "object_type")));
+        objectRef.setTestId(longValue(firstPresent(map, "testId", "test_id")));
+        objectRef.setPassageId(longValue(firstPresent(map, "passageId", "passage_id")));
+        objectRef.setQuestionId(longValue(firstPresent(map, "questionId", "question_id")));
+        objectRef.setRecordId(longValue(firstPresent(map, "recordId", "record_id")));
+        objectRef.setQuestionNumber(integerValue(firstPresent(map, "questionNumber", "question_number")));
+        objectRef.setSessionId(stringValue(firstPresent(map, "sessionId", "session_id")));
+        return objectRef;
+    }
+
+    private DashboardAskObjectRef mergeObjectRef(DashboardAskObjectRef current, DashboardAskObjectRef recovered) {
+        if (current == null) {
+            return recovered;
+        }
+        DashboardAskObjectRef merged = new DashboardAskObjectRef();
+        merged.setModule(nonBlank(current.getModule(), recovered.getModule()));
+        merged.setObjectType(nonBlank(current.getObjectType(), recovered.getObjectType()));
+        merged.setTestId(current.getTestId() != null ? current.getTestId() : recovered.getTestId());
+        merged.setPassageId(current.getPassageId() != null ? current.getPassageId() : recovered.getPassageId());
+        merged.setQuestionId(current.getQuestionId() != null ? current.getQuestionId() : recovered.getQuestionId());
+        merged.setRecordId(current.getRecordId() != null ? current.getRecordId() : recovered.getRecordId());
+        merged.setQuestionNumber(current.getQuestionNumber() != null ? current.getQuestionNumber() : recovered.getQuestionNumber());
+        merged.setSessionId(nonBlank(current.getSessionId(), recovered.getSessionId()));
+        return merged;
+    }
+
+    private boolean isUsableObjectRef(DashboardAskObjectRef objectRef) {
+        return objectRef != null && notBlank(objectRef.getModule());
+    }
+
+    private boolean hasCarriedObjectRef(DashboardAskRequest request) {
+        return request != null && Boolean.TRUE.equals(safeMap(request.getContext()).get(META_KEY_CONTEXT_CARRIED));
+    }
+
+    private Object firstPresent(Map<String, Object> map, String... keys) {
+        if (map == null || keys == null) {
+            return null;
+        }
+        for (String key : keys) {
+            if (map.containsKey(key)) {
+                return map.get(key);
+            }
+        }
+        return null;
+    }
+
+    private Long longValue(Object value) {
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        String text = stringValue(value);
+        if (!notBlank(text)) {
+            return null;
+        }
+        try {
+            return Long.parseLong(text);
+        } catch (NumberFormatException ex) {
+            return null;
+        }
+    }
+
+    private Integer integerValue(Object value) {
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        String text = stringValue(value);
+        if (!notBlank(text)) {
+            return null;
+        }
+        try {
+            return Integer.parseInt(text);
+        } catch (NumberFormatException ex) {
+            return null;
+        }
+    }
+
+    private String stringValue(Object value) {
+        return value == null ? null : String.valueOf(value).trim();
+    }
+
+    private DashboardAskPreloadResolution resolvePreloadedPayload(String role,
+                                                                  Long operatorUserId,
+                                                                  Long targetUserId,
+                                                                  DashboardAskRequest request) {
+        DashboardAskPreloadedPayload requestPayload = request.getPreloadedPayload();
+        if (requestPayload != null) {
+            return new DashboardAskPreloadResolution(requestPayload, "request");
+        }
+
+        String pageName = nonBlank(extractPageName(request.getClientContext()),
+                ROLE_USER.equalsIgnoreCase(role) ? "user_overview" : "admin_overview");
+        Map<String, Object> context = safeMap(request.getContext());
+        try {
+            DashboardAskPreloadedPayload cachedPayload = dashboardPreloadService.getCached(
+                    role,
+                    operatorUserId,
+                    targetUserId,
+                    pageName,
+                    request.getObjectRef(),
+                    context
+            );
+            if (cachedPayload != null) {
+                return new DashboardAskPreloadResolution(cachedPayload, "redis");
+            }
+        } catch (Exception ex) {
+            log.warn("dashboard.ask.preload_cache_failed role={} operatorUserId={} targetUserId={} pageName={} message={}",
+                    role, operatorUserId, targetUserId, pageName, ex.getMessage());
+            log.debug("dashboard.ask.preload_cache_failed.stacktrace", ex);
+        }
+
+        try {
+            DashboardAskPreloadedPayload databasePayload = dashboardPreloadService.preload(
+                    role,
+                    operatorUserId,
+                    targetUserId,
+                    pageName,
+                    request.getObjectRef(),
+                    context
+            );
+            return new DashboardAskPreloadResolution(databasePayload, databasePayload != null ? "database" : "none");
+        } catch (Exception ex) {
+            log.warn("dashboard.ask.preload_database_failed role={} operatorUserId={} targetUserId={} pageName={} message={}",
+                    role, operatorUserId, targetUserId, pageName, ex.getMessage());
+            log.debug("dashboard.ask.preload_database_failed.stacktrace", ex);
+            return new DashboardAskPreloadResolution(null, "preload_error");
+        }
+    }
+
+    private record DashboardAskPreloadResolution(DashboardAskPreloadedPayload payload, String source) {
+    }
+
+    private DashboardAssistantResponse buildStructuredFallbackErrorResponse(String role,
+                                                                            Long operatorUserId,
+                                                                            Long targetUserId,
+                                                                            DashboardAskRequest request,
+                                                                            DashboardAskPreloadedPayload preloadedPayload,
+                                                                            Map<String, Object> learningContext,
+                                                                            Map<String, Object> questionContext,
+                                                                            String preloadSource,
+                                                                            long startedAt,
+                                                                            DashboardAskDecisionResult decision,
+                                                                            Exception ex) {
+        DashboardAnswerComposeResult composed = null;
+        try {
+            composed = composeDirectAnswer(
+                    role, operatorUserId, targetUserId, request, preloadedPayload, learningContext, questionContext
+            );
+        } catch (Exception composeEx) {
+            log.warn("dashboard.ask.structured_fallback.compose_failed role={} operatorUserId={} message={}",
+                    role, operatorUserId, composeEx.getMessage());
+            log.debug("dashboard.ask.structured_fallback.compose_failed.stacktrace", composeEx);
+        }
+        Object responseData = buildDirectAnswerData(request, preloadedPayload, learningContext, questionContext);
+        String fallbackAnswer = fallbackStructuredErrorAnswer(resolveResponseLanguage(request));
+
+        return DashboardAssistantResponse.builder()
+                .answer(nonBlank(composed == null ? null : composed.getAnswer(), fallbackAnswer))
+                .data(responseData)
+                .suggestions(DashboardSuggestionPerspectiveNormalizer.normalize(
+                        composed == null ? safeList(decision == null ? null : decision.getSuggestions()) : safeList(composed.getSuggestions())))
+                .meta(mergeMeta(
+                        mapOfNullable(
+                                META_KEY_ANSWER_MODE, "FALLBACK_SQL_ERROR_DIRECT",
+                                META_KEY_ACTION, ACTION_GENERATE_SQL,
+                                META_KEY_SUFFICIENT, false,
+                                META_KEY_USED_PRELOAD, preloadedPayload != null,
+                                META_KEY_PRELOAD_SOURCE, preloadSource,
+                                META_KEY_OBJECT_REF, request == null ? null : request.getObjectRef(),
+                                META_KEY_CONTEXT_CARRIED, hasCarriedObjectRef(request),
+                                META_KEY_ELAPSED_MS, System.currentTimeMillis() - startedAt,
+                                META_KEY_REVIEW_SUMMARY, "Structured dashboard query failed; returned answer from available context.",
+                                META_KEY_ERROR_MESSAGE, ex == null ? null : ex.getMessage()
+                        ),
+                        decision == null ? null : decision.getMeta()
+                ))
+                .build();
+    }
+
+    private String fallbackStructuredErrorAnswer(String language) {
+        if (RESPONSE_LANGUAGE_EN.equalsIgnoreCase(language)) {
+            return "I could not complete the extra dashboard query, so I can only answer from the current page context and previous conversation. Please include the specific question, record, or time range if you want a more precise answer.";
+        }
+        if (RESPONSE_LANGUAGE_ZH_HANS.equalsIgnoreCase(language)) {
+            return "我暂时无法完成额外的 dashboard 查询，所以只能根据当前页面上下文和上一轮对话回答。若要更精确，请带上具体题目、记录或时间范围。";
+        }
+        return "我暫時無法完成額外的 dashboard 查詢，所以只能根據目前頁面上下文和上一輪對話回答。若要更精確，請帶上具體題目、紀錄或時間範圍。";
+    }
+
+    private DashboardAssistantResponse buildUnhandledAskErrorResponse(String role,
+                                                                      Long operatorUserId,
+                                                                      Long targetUserId,
+                                                                      DashboardAskRequest request,
+                                                                      long startedAt,
+                                                                      Exception ex) {
+        Map<String, Object> data = mapOfNullable(
+                "query", request == null ? null : request.getQuery(),
+                META_KEY_ASK_SCENE, request == null ? null : request.getAskScene(),
+                "responseMode", request == null ? null : request.getResponseMode(),
+                "objectRef", request == null ? null : request.getObjectRef(),
+                "conversationHistory", request == null ? null : safeConversationHistory(request.getConversationHistory()),
+                "clientContext", request == null ? null : request.getClientContext()
+        );
+
+        return DashboardAssistantResponse.builder()
+                .answer(unhandledAskErrorAnswer(resolveResponseLanguage(request)))
+                .data(data.isEmpty() ? null : data)
+                .suggestions(DashboardSuggestionPerspectiveNormalizer.normalize(List.of(
+                        "Explain the current question using my saved answer and the correct answer",
+                        "Show me the evidence in the source material for this answer",
+                        "Give me one focused practice step for this question type"
+                )))
+                .meta(mapOfNullable(
+                        META_KEY_ANSWER_MODE, "ASK_ERROR_DIRECT",
+                        META_KEY_ACTION, "ASK_ERROR",
+                        META_KEY_SUFFICIENT, false,
+                        META_KEY_USED_PRELOAD, request != null && request.getPreloadedPayload() != null,
+                        META_KEY_PRELOAD_SOURCE, request != null && request.getPreloadedPayload() != null ? "request" : "none",
+                        META_KEY_OBJECT_REF, request == null ? null : request.getObjectRef(),
+                        META_KEY_CONTEXT_CARRIED, hasCarriedObjectRef(request),
+                        META_KEY_ELAPSED_MS, System.currentTimeMillis() - startedAt,
+                        META_KEY_REVIEW_SUMMARY, "Dashboard ask failed before a full answer could be generated.",
+                        META_KEY_ERROR_MESSAGE, ex == null ? null : ex.getMessage(),
+                        "role", role,
+                        "operatorUserId", operatorUserId,
+                        "targetUserId", targetUserId
+                ))
+                .build();
+    }
+
+    private String unhandledAskErrorAnswer(String language) {
+        if (RESPONSE_LANGUAGE_EN.equalsIgnoreCase(language)) {
+            return "I could not complete this dashboard request right now. I still kept the current question and previous conversation context, so you can retry with the specific question number, record, or time range.";
+        }
+        if (RESPONSE_LANGUAGE_ZH_HANS.equalsIgnoreCase(language)) {
+            return "我暂时无法完成这次 dashboard 请求，但已经保留当前问题和上一轮对话上下文。请带上具体题号、记录或时间范围再试一次。";
+        }
+        return "我暫時無法完成這次 dashboard 請求，但已保留目前問題和上一輪對話上下文。請帶上具體題號、紀錄或時間範圍再試一次。";
+    }
+
+    private void notifyDecisionResolved(DashboardAskProgressListener progressListener,
+                                        DashboardAskRequest request,
+                                        DashboardAskDecisionResult decision,
+                                        DashboardAskPreloadedPayload mergedPayload,
+                                        String preloadSource,
+                                        boolean requiresDatabaseQuery) {
+        if (progressListener == null) {
+            return;
+        }
+        Map<String, Object> meta = mapOfNullable(
+                META_KEY_ACTION, safeString(decision == null ? null : decision.getAction()),
+                META_KEY_SUFFICIENT, decision == null ? null : decision.getSufficient(),
+                META_KEY_USED_PRELOAD, mergedPayload != null,
+                META_KEY_PRELOAD_SOURCE, preloadSource,
+                "requiresDatabaseQuery", requiresDatabaseQuery,
+                "requiredDataScopes", safeList(decision == null ? null : decision.getRequiredDataScopes())
+        );
+        progressListener.onDecisionResolved(
+                resolveProgressDisplayAnswer(request, decision, requiresDatabaseQuery),
+                mergeMeta(meta, decision == null ? null : decision.getMeta())
+        );
+    }
+
+    private String resolveProgressDisplayAnswer(DashboardAskRequest request,
+                                                DashboardAskDecisionResult decision,
+                                                boolean requiresDatabaseQuery) {
+        if (!requiresDatabaseQuery) {
+            return resolveLocalizedReviewSummary(request, decision, true);
+        }
+        String language = resolveResponseLanguage(request);
+        if (RESPONSE_LANGUAGE_EN.equalsIgnoreCase(language)) {
+            return "I need to check additional dashboard data before answering.";
+        }
+        if (RESPONSE_LANGUAGE_ZH_HANS.equalsIgnoreCase(language)) {
+            return "我需要再查询一些 dashboard 数据，确认后再回答。";
+        }
+        return "我需要再查詢一些 dashboard 資料，確認後再回答。";
     }
 
     private Map<String, Object> resolveLearningContext(String role,
@@ -271,9 +687,19 @@ public class DashboardIntentExecutionFacade {
         if (request == null || request.getObjectRef() == null || !notBlank(request.getObjectRef().getModule())) {
             return new LinkedHashMap<>();
         }
-        return safeMap(dashboardLearningContextService.buildLearningContext(
-                role, operatorUserId, targetUserId, safeString(request.getAskScene()), request.getObjectRef()
-        ));
+        try {
+            return safeMap(dashboardLearningContextService.buildLearningContext(
+                    role, operatorUserId, targetUserId, safeString(request.getAskScene()), request.getObjectRef()
+            ));
+        } catch (Exception ex) {
+            log.warn("dashboard.ask.learning_context_failed role={} operatorUserId={} targetUserId={} askScene={} objectRef={} message={}",
+                    role, operatorUserId, targetUserId, safeString(request.getAskScene()), request.getObjectRef(), ex.getMessage());
+            log.debug("dashboard.ask.learning_context_failed.stacktrace", ex);
+            return mapOfNullable(
+                    META_KEY_OBJECT_REF, request.getObjectRef(),
+                    "learningContextError", ex.getMessage()
+            );
+        }
     }
 
     private Map<String, Object> resolveQuestionContext(DashboardAskPreloadedPayload payload,
@@ -322,6 +748,7 @@ public class DashboardIntentExecutionFacade {
                                 META_KEY_ASK_SCENE, request == null ? null : request.getAskScene(),
                                 "pageName", extractPageName(request == null ? null : request.getClientContext())
                         ))
+                        .userTargetScores(DashboardUserTargetScoreContext.fromPreloadedPayload(preloadedPayload))
                         .data(data)
                         .responseLanguage(resolveResponseLanguage(request))
                         .build()
@@ -334,6 +761,7 @@ public class DashboardIntentExecutionFacade {
                                          Map<String, Object> questionContext) {
         Map<String, Object> result = new LinkedHashMap<>();
         putIfPresent(result, "query", request == null ? null : request.getQuery());
+        putIfPresent(result, "conversationHistory", request == null ? null : safeConversationHistory(request.getConversationHistory()));
         putIfPresent(result, META_KEY_ASK_SCENE, request == null ? null : request.getAskScene());
         putIfPresent(result, "responseMode", request == null ? null : request.getResponseMode());
         putIfPresent(result, "objectRef", request == null ? null : request.getObjectRef());
@@ -343,6 +771,10 @@ public class DashboardIntentExecutionFacade {
 
         if (preloadedPayload != null) {
             putIfPresent(result, "overview", preloadedPayload.getOverview());
+            Map<String, Object> userTargetScores = DashboardUserTargetScoreContext.fromPreloadedPayload(preloadedPayload);
+            if (DashboardUserTargetScoreContext.hasAnyScore(userTargetScores)) {
+                putIfPresent(result, DashboardUserTargetScoreContext.KEY_USER_TARGET_SCORES, userTargetScores);
+            }
             putIfPresent(result, "progressSummary", preloadedPayload.getProgressSummary());
             putIfPresent(result, "recentRecords", preloadedPayload.getRecentRecords());
             putIfPresent(result, "moduleStats", preloadedPayload.getModuleStats());
@@ -574,6 +1006,20 @@ public class DashboardIntentExecutionFacade {
 
     private List<String> safeList(List<String> source) {
         return source == null ? new ArrayList<>() : new ArrayList<>(source);
+    }
+
+    private List<DashboardAskConversationMessage> safeConversationHistory(List<DashboardAskConversationMessage> source) {
+        if (source == null || source.isEmpty()) {
+            return new ArrayList<>();
+        }
+        List<DashboardAskConversationMessage> result = new ArrayList<>();
+        for (DashboardAskConversationMessage message : source) {
+            if (message == null || !notBlank(message.getContent())) {
+                continue;
+            }
+            result.add(message);
+        }
+        return result;
     }
 
     private Map<String, Object> mapOfNullable(Object... keyValues) {

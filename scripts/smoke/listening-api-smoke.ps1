@@ -372,7 +372,11 @@ try {
     $start = Invoke-Api "POST" "/user/listening/tests/1002/start" $userToken
     $Script:CreatedRecordId = [long]$start.data.recordId
     $sessionId = [string]$start.data.sessionId
-    Invoke-Api "GET" "/user/listening/sessions/$sessionId" $userToken | Out-Null
+    $sessionDetail = Invoke-Api "GET" "/user/listening/sessions/$sessionId" $userToken
+    foreach ($field in @("prepSeconds", "timeLimitSeconds", "prepMinutes", "totalMinutes")) {
+        Assert-True ($null -ne $start.data.$field) "start response missing $field"
+        Assert-True ($null -ne $sessionDetail.data.$field) "session response missing $field"
+    }
     Assert-True ([int]$start.data.allowPause -eq 0) "seed test 1002 should keep real IELTS allowPause=0"
     $answers = @()
     foreach ($question in $questions) {
@@ -398,8 +402,10 @@ try {
     Write-Pass "ADMIN read flow"
 
     $tempTitle = "SMOKE Listening Disposable $(Get-Date -Format yyyyMMddHHmmss)"
-    $createdTest = Invoke-Api "POST" "/admin/listening/tests" $adminToken @{ title = $tempTitle; totalScore = 1; timerMode = "TEST_LEVEL"; totalSeconds = 600; autoSubmit = 1; allowPause = 1 }
+    $createdTest = Invoke-Api "POST" "/admin/listening/tests" $adminToken @{ title = $tempTitle; totalScore = 1; timerMode = "TEST_LEVEL"; prepMinutes = 1; totalMinutes = 10; autoSubmit = 1; allowPause = 1 }
     $Script:CreatedTestId = [long]$createdTest.data.id
+    Assert-True ([int]$createdTest.data.prepSeconds -eq 60) "created listening prepSeconds should equal prepMinutes * 60"
+    Assert-True ([int]$createdTest.data.totalSeconds -eq 600) "created listening totalSeconds should equal totalMinutes * 60"
 
     Invoke-Api "POST" "/admin/listening/tests/$Script:CreatedTestId/part-groups" $adminToken @{ partNumber = 0; groupNumber = 1; title = "Invalid"; questionType = "SHORT_ANSWER"; answerMode = "TEXT" } $false | Out-Null
     $group = Invoke-Api "POST" "/admin/listening/tests/$Script:CreatedTestId/part-groups" $adminToken @{ partNumber = 5; groupNumber = 1; title = "Task 5"; instructionText = "Smoke instruction"; groupGuideText = "Answer the question."; groupRequirementText = "ONE WORD ONLY"; questionType = "SHORT_ANSWER"; answerMode = "TEXT"; answerRulesJson = "[]"; questionNoStart = 1; questionNoEnd = 1; displayOrder = 5; timeLimitSeconds = 0 }

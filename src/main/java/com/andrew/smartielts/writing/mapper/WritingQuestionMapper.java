@@ -14,7 +14,12 @@ public interface WritingQuestionMapper {
 
     void update(WritingQuestion question);
 
+    void updateImageDetailDescription(@Param("id") Long id,
+                                      @Param("imageDetailDescription") String imageDetailDescription);
+
     List<WritingQuestion> findAll();
+
+    List<WritingQuestion> findByTaskType(@Param("taskType") String taskType);
 
     WritingQuestion findById(@Param("id") Long id);
 
@@ -27,5 +32,4 @@ public interface WritingQuestionMapper {
 
     void restoreById(@Param("id") Long id);
 
-    List<WritingQuestion> findNeedImageMigration();
 }

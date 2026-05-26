@@ -1,18 +1,13 @@
 package com.andrew.smartielts.listening.controller.admin;
 
 import com.andrew.smartielts.common.domain.pojo.TestPartGroup;
-import com.andrew.smartielts.common.image.domain.dto.BizImageResourceDTO;
-import com.andrew.smartielts.common.image.domain.pojo.BizImageResource;
 import com.andrew.smartielts.common.image.service.BizImageResourceService;
 import com.andrew.smartielts.common.resultDTO.Result;
 import com.andrew.smartielts.common.storage.BucketType;
 import com.andrew.smartielts.listening.constants.ListeningAudioConstants;
-import com.andrew.smartielts.listening.domain.dto.ListeningPartGroupDTO;
-import com.andrew.smartielts.listening.domain.dto.ListeningQuestionDTO;
+import com.andrew.smartielts.listening.domain.dto.AdminListeningTestFullSaveDTO;
 import com.andrew.smartielts.listening.domain.dto.ListeningTestDTO;
 import com.andrew.smartielts.listening.domain.pojo.ListeningAudio;
-import com.andrew.smartielts.listening.domain.query.admin.AdminListeningDeletedRecordPageQuery;
-import com.andrew.smartielts.listening.domain.query.admin.AdminListeningRecordPageQuery;
 import com.andrew.smartielts.listening.service.admin.AdminListeningService;
 import com.andrew.smartielts.listening.service.admin.impl.ListeningAudioServiceImpl;
 import com.andrew.smartielts.listening.service.admin.impl.ListeningPartGroupServiceImpl;
@@ -24,8 +19,6 @@ import org.springframework.http.MediaType;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
-
-import java.util.List;
 import java.util.Objects;
 
 @Tag(name = "Admin Listening API")
@@ -63,6 +56,13 @@ public class AdminListeningController {
         return Result.success(adminListeningService.updateTest(id, dto));
     }
 
+    @Operation(summary = "Save full listening test")
+    @PutMapping("/tests/{testId}/full")
+    public Result<?> saveFullTest(@PathVariable Long testId,
+                                  @Valid @RequestBody AdminListeningTestFullSaveDTO dto) {
+        return Result.success(adminListeningService.saveFullTest(testId, dto));
+    }
+
     @Operation(summary = "List listening tests")
     @GetMapping("/tests")
     public Result<?> listTests() {
@@ -94,8 +94,9 @@ public class AdminListeningController {
     public Result<?> createTestAudio(
             @PathVariable Long testId,
             @RequestPart("file") MultipartFile file,
-            @RequestPart(value = "title", required = false) String title) {
-        return Result.success(listeningAudioService.createTestAudioFromUpload(testId, title, file));
+            @RequestPart(value = "title", required = false) String title,
+            @RequestPart(value = "transcriptText", required = false) String transcriptText) {
+        return Result.success(listeningAudioService.createTestAudioFromUpload(testId, title, transcriptText, file));
     }
 
     @Operation(summary = "Get listening test audio")
@@ -110,10 +111,11 @@ public class AdminListeningController {
             @PathVariable Long testId,
             @PathVariable Long audioId,
             @RequestPart("file") MultipartFile file,
-            @RequestPart(value = "title", required = false) String title) {
+            @RequestPart(value = "title", required = false) String title,
+            @RequestPart(value = "transcriptText", required = false) String transcriptText) {
         ListeningAudio existing = requireAudio(audioId);
         assertTestAudioBelongsToTest(existing, testId);
-        return Result.success(listeningAudioService.updateTestAudioFromUpload(audioId, testId, title, file));
+        return Result.success(listeningAudioService.updateTestAudioFromUpload(audioId, testId, title, transcriptText, file));
     }
 
     @Operation(summary = "Delete listening audio")
@@ -131,9 +133,10 @@ public class AdminListeningController {
             @PathVariable Long testId,
             @PathVariable Long partGroupId,
             @RequestPart("file") MultipartFile file,
-            @RequestPart(value = "title", required = false) String title) {
+            @RequestPart(value = "title", required = false) String title,
+            @RequestPart(value = "transcriptText", required = false) String transcriptText) {
         assertPartGroupBelongsToTest(testId, partGroupId);
-        return Result.success(listeningAudioService.createPartGroupAudioFromUpload(testId, partGroupId, title, file));
+        return Result.success(listeningAudioService.createPartGroupAudioFromUpload(testId, partGroupId, title, transcriptText, file));
     }
 
     @Operation(summary = "List part-group listening audios")
@@ -149,11 +152,12 @@ public class AdminListeningController {
             @PathVariable Long partGroupId,
             @PathVariable Long audioId,
             @RequestPart("file") MultipartFile file,
-            @RequestPart(value = "title", required = false) String title) {
+            @RequestPart(value = "title", required = false) String title,
+            @RequestPart(value = "transcriptText", required = false) String transcriptText) {
         assertPartGroupBelongsToTest(testId, partGroupId);
         ListeningAudio existing = requireAudio(audioId);
         assertPartGroupAudioBelongs(existing, testId, partGroupId);
-        return Result.success(listeningAudioService.updatePartGroupAudioFromUpload(audioId, testId, partGroupId, title, file));
+        return Result.success(listeningAudioService.updatePartGroupAudioFromUpload(audioId, testId, partGroupId, title, transcriptText, file));
     }
 
     @Operation(summary = "Delete part-group listening audio")
@@ -169,184 +173,31 @@ public class AdminListeningController {
         return Result.success();
     }
 
-    @Operation(summary = "Create listening part group")
-    @PostMapping("/tests/{testId}/part-groups")
-    public Result<?> createPartGroup(@PathVariable Long testId, @Valid @RequestBody ListeningPartGroupDTO dto) {
-        TestPartGroup created = listeningPartGroupService.createPartGroup(toPartGroup(testId, dto));
-        replacePartGroupImages(created.getId(), dto.getImages());
-        return Result.success(created);
-    }
-
-    @Operation(summary = "Update listening part group")
-    @PutMapping("/part-groups/{partGroupId}")
-    public Result<?> updatePartGroup(@PathVariable Long partGroupId, @Valid @RequestBody ListeningPartGroupDTO dto) {
-        TestPartGroup existing = requirePartGroup(partGroupId);
-        TestPartGroup updated = listeningPartGroupService.updatePartGroup(partGroupId, toPartGroup(existing.getTestId(), dto));
-        replacePartGroupImages(partGroupId, dto.getImages());
-        return Result.success(updated);
-    }
-
-    @Operation(summary = "Get listening part group detail")
-    @GetMapping("/part-groups/{partGroupId}")
-    public Result<?> getPartGroup(@PathVariable Long partGroupId) {
-        TestPartGroup partGroup = listeningPartGroupService.getActiveById(partGroupId);
-        attachPartGroupImages(partGroup);
-        return Result.success(partGroup);
-    }
-
-    @Operation(summary = "List listening part groups")
-    @GetMapping("/tests/{testId}/part-groups")
-    public Result<?> listPartGroups(@PathVariable Long testId) {
-        List<TestPartGroup> partGroups = listeningPartGroupService.listActiveByTestId(testId);
-        attachPartGroupImages(partGroups);
-        return Result.success(partGroups);
-    }
-
-    @Operation(summary = "Delete listening part group")
-    @DeleteMapping("/part-groups/{partGroupId}")
-    public Result<?> deletePartGroup(@PathVariable Long partGroupId) {
-        listeningPartGroupService.deleteById(partGroupId);
-        return Result.success();
-    }
-
-    @Operation(summary = "Restore listening part group")
-    @PutMapping("/part-groups/{partGroupId}/restore")
-    public Result<?> restorePartGroup(@PathVariable Long partGroupId) {
-        listeningPartGroupService.restoreById(partGroupId);
-        return Result.success();
-    }
-
-    @Operation(summary = "Create listening question")
-    @PostMapping("/tests/{testId}/questions")
-    public Result<?> createQuestion(@PathVariable Long testId, @Valid @RequestBody ListeningQuestionDTO dto) {
-        adminListeningService.createQuestion(testId, dto);
-        return Result.success();
-    }
-
-    @Operation(summary = "Update listening question")
-    @PutMapping("/questions/{questionId}")
-    public Result<?> updateQuestion(@PathVariable Long questionId, @Valid @RequestBody ListeningQuestionDTO dto) {
-        adminListeningService.updateQuestion(questionId, dto);
-        return Result.success();
-    }
-
-    @Operation(summary = "Delete listening question")
-    @DeleteMapping("/questions/{questionId}")
-    public Result<?> deleteQuestion(@PathVariable Long questionId) {
-        adminListeningService.deleteQuestion(questionId);
-        return Result.success();
-    }
-
-    @Operation(summary = "Restore listening question")
-    @PutMapping("/questions/{questionId}/restore")
-    public Result<?> restoreQuestion(@PathVariable Long questionId) {
-        adminListeningService.restoreQuestion(questionId);
-        return Result.success();
-    }
-
-    @Operation(summary = "Admin listening active records overview")
-    @PostMapping("/records/overview")
-    public Result<?> pageActiveRecords(@Valid @RequestBody AdminListeningRecordPageQuery query) {
-        return Result.success(adminListeningService.pageActiveRecords(query));
-    }
-
-    @Operation(summary = "Admin listening deleted records overview")
-    @PostMapping("/records/deleted/overview")
-    public Result<?> pageDeletedRecords(@Valid @RequestBody AdminListeningDeletedRecordPageQuery query) {
-        return Result.success(adminListeningService.pageDeletedRecords(query));
-    }
-
-    @Operation(summary = "Get listening record detail")
-    @GetMapping("/records/{recordId}")
-    public Result<?> getRecord(@PathVariable Long recordId) {
-        return Result.success(adminListeningService.getRecord(recordId));
-    }
-
-    @Operation(summary = "Delete listening record")
-    @DeleteMapping("/records/{recordId}")
-    public Result<?> deleteRecord(@PathVariable Long recordId) {
-        adminListeningService.deleteRecord(recordId);
-        return Result.success();
-    }
-
-    @Operation(summary = "Restore listening record")
-    @PutMapping("/records/{recordId}/restore")
-    public Result<?> restoreRecord(@PathVariable Long recordId) {
-        adminListeningService.restoreRecord(recordId);
-        return Result.success();
-    }
-
-    private TestPartGroup toPartGroup(Long testId, ListeningPartGroupDTO dto) {
-        TestPartGroup partGroup = new TestPartGroup();
-        partGroup.setId(dto.getId());
-        partGroup.setTestId(testId);
-        partGroup.setPartNumber(dto.getPartNumber());
-        partGroup.setGroupNumber(dto.getGroupNumber());
-        partGroup.setTitle(trimToNull(dto.getTitle()));
-        partGroup.setInstructionText(trimToNull(dto.getInstructionText()));
-        partGroup.setGroupGuideText(trimToNull(dto.getGroupGuideText()));
-        partGroup.setGroupRequirementText(trimToNull(dto.getGroupRequirementText()));
-        partGroup.setQuestionType(trimToNull(dto.getQuestionType()));
-        partGroup.setAnswerMode(trimToNull(dto.getAnswerMode()));
-        partGroup.setOptionsJson(trimToNull(dto.getOptionsJson()));
-        partGroup.setAcceptedAnswersJson(trimToNull(dto.getAcceptedAnswersJson()));
-        partGroup.setAnswerRulesJson(trimToNull(dto.getAnswerRulesJson()));
-        partGroup.setCaseInsensitive(defaultInt(dto.getCaseInsensitive(), 1));
-        partGroup.setIgnoreWhitespace(defaultInt(dto.getIgnoreWhitespace(), 1));
-        partGroup.setIgnorePunctuation(defaultInt(dto.getIgnorePunctuation(), 0));
-        partGroup.setQuestionNoStart(dto.getQuestionNoStart());
-        partGroup.setQuestionNoEnd(dto.getQuestionNoEnd());
-        partGroup.setDisplayOrder(defaultInt(dto.getDisplayOrder(), 0));
-        partGroup.setTimeLimitSeconds(defaultInt(dto.getTimeLimitSeconds(), 0));
-        partGroup.setIsDeleted(0);
-        return partGroup;
-    }
-
-    private void replacePartGroupImages(Long partGroupId, List<BizImageResourceDTO> images) {
-        bizImageResourceService.replaceByTarget(
+    @Operation(summary = "Replace listening part group images")
+    @PostMapping(value = "/part-groups/{partGroupId}/images", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public Result<?> replacePartGroupImagesFromUpload(
+            @PathVariable Long partGroupId,
+            @RequestPart(value = "images", required = false) MultipartFile[] images) {
+        requirePartGroup(partGroupId);
+        return Result.success(bizImageResourceService.replaceByTargetFromUploads(
                 ListeningAudioConstants.TARGET_TYPE_LISTENING_PART_GROUP,
                 partGroupId,
-                BucketType.QUESTION_GROUP_IMAGE.getKey(),
-                ListeningAudioConstants.BIZ_PATH_QUESTION_GROUP_IMAGE,
+                BucketType.QUESTION_GROUP_IMAGE,
+                ListeningAudioConstants.BIZ_PATH_LISTENING_PART_GROUP_IMAGE,
                 images
-        );
-    }
-
-    private void attachPartGroupImages(TestPartGroup partGroup) {
-        if (partGroup == null || partGroup.getId() == null) {
-            return;
-        }
-        partGroup.setImages(bizImageResourceService.listByTarget(
-                ListeningAudioConstants.TARGET_TYPE_LISTENING_PART_GROUP,
-                partGroup.getId()
         ));
     }
 
-    private void attachPartGroupImages(List<TestPartGroup> partGroups) {
-        if (partGroups == null || partGroups.isEmpty()) {
-            return;
-        }
-        List<Long> partGroupIds = partGroups.stream()
-                .filter(Objects::nonNull)
-                .map(TestPartGroup::getId)
-                .filter(Objects::nonNull)
-                .distinct()
-                .toList();
-        if (partGroupIds.isEmpty()) {
-            return;
-        }
-
-        var imageMap = bizImageResourceService.listByTargets(
-                ListeningAudioConstants.TARGET_TYPE_LISTENING_PART_GROUP,
-                partGroupIds
-        );
-        for (TestPartGroup partGroup : partGroups) {
-            if (partGroup == null || partGroup.getId() == null) {
-                continue;
-            }
-            List<BizImageResource> images = imageMap.get(partGroup.getId());
-            partGroup.setImages(images);
-        }
+    @Operation(summary = "Replace listening question images")
+    @PostMapping(value = "/questions/{questionId}/images", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public Result<?> replaceQuestionImages(
+            @PathVariable Long questionId,
+            @RequestPart(value = "images", required = false) MultipartFile[] images) {
+        adminListeningService.replaceQuestionImages(questionId, images);
+        return Result.success(bizImageResourceService.listByTarget(
+                ListeningAudioConstants.TARGET_TYPE_LISTENING_QUESTION,
+                questionId
+        ));
     }
 
     private ListeningAudio requireAudio(Long audioId) {
@@ -384,15 +235,4 @@ public class AdminListeningController {
         }
     }
 
-    private Integer defaultInt(Integer value, Integer defaultValue) {
-        return value == null ? defaultValue : value;
-    }
-
-    private String trimToNull(String value) {
-        if (value == null) {
-            return null;
-        }
-        String trimmed = value.trim();
-        return trimmed.isEmpty() ? null : trimmed;
-    }
 }

@@ -14,9 +14,11 @@ public final class DashboardOverviewConstants {
     public static final String ASK_SCENE_CHAT = "CHAT";
     public static final String RESPONSE_MODE_DEFAULT = "default";
     public static final String RESPONSE_LANGUAGE_ZH_HANT = "zh-Hant";
+    public static final String RESPONSE_LANGUAGE_EN = "en";
 
     public static final String QUERY_PARAM_TARGET_USER_ID = "target_user_id";
     public static final String QUERY_PARAM_TIME_RANGE = "time_range";
+    public static final String QUERY_PARAM_SUMMARY_CACHE_KEY = "summary_cache_key";
 
     public static final String DEFAULT_TIME_RANGE = "last30days";
 

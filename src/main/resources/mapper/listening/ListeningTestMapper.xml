@@ -13,6 +13,7 @@
         <result property="updatedTime" column="updated_time"/>
         <result property="isDeleted" column="is_deleted"/>
         <result property="timerMode" column="timer_mode"/>
+        <result property="prepSeconds" column="prep_seconds"/>
         <result property="totalSeconds" column="total_seconds"/>
         <result property="autoSubmit" column="auto_submit"/>
         <result property="allowPause" column="allow_pause"/>
@@ -27,6 +28,7 @@
         updated_time,
         is_deleted,
         timer_mode,
+        prep_seconds,
         total_seconds,
         auto_submit,
         allow_pause,
@@ -45,6 +47,7 @@
             updated_time,
             is_deleted,
             timer_mode,
+            prep_seconds,
             total_seconds,
             auto_submit,
             allow_pause,
@@ -56,6 +59,7 @@
                      #{updatedTime},
                      #{isDeleted},
                      #{timerMode},
+                     #{prepSeconds},
                      #{totalSeconds},
                      #{autoSubmit},
                      #{allowPause},
@@ -105,6 +109,7 @@
             total_score = #{totalScore},
             updated_time = #{updatedTime},
             timer_mode = #{timerMode},
+            prep_seconds = #{prepSeconds},
             total_seconds = #{totalSeconds},
             auto_submit = #{autoSubmit},
             allow_pause = #{allowPause},

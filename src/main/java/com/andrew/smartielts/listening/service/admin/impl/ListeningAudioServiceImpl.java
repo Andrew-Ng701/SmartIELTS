@@ -16,6 +16,8 @@ import com.andrew.smartielts.listening.service.admin.ListeningAudioService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDateTime;
@@ -23,6 +25,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
 
 @Slf4j
 @Service
@@ -49,7 +52,7 @@ public class ListeningAudioServiceImpl implements ListeningAudioService {
 
     @Override
     @Transactional
-    public ListeningAudio createTestAudioFromUpload(Long testId, String title, MultipartFile file) {
+    public ListeningAudio createTestAudioFromUpload(Long testId, String title, String transcriptText, MultipartFile file) {
         requireActiveTest(testId);
         validateUploadFile(file);
 
@@ -62,18 +65,19 @@ public class ListeningAudioServiceImpl implements ListeningAudioService {
         audio.setTitle(trimToNull(title));
         audio.setAudioUrl(uploaded.getFileUrl());
         audio.setAudioObjectKey(uploaded.getFileKey());
-        audio.setTranscriptText(resolveTranscript(uploaded.getFileUrl()));
+        audio.setTranscriptText(trimToNull(transcriptText));
         audio.setIsDeleted(ListeningConstants.NOT_DELETED);
         audio.setCreatedTime(LocalDateTime.now());
         audio.setUpdatedTime(LocalDateTime.now());
 
         listeningAudioMapper.insertListeningAudio(audio);
+        scheduleTranscriptGenerationIfNeeded(audio, transcriptText);
         return audio;
     }
 
     @Override
     @Transactional
-    public ListeningAudio updateTestAudioFromUpload(Long audioId, Long testId, String title, MultipartFile file) {
+    public ListeningAudio updateTestAudioFromUpload(Long audioId, Long testId, String title, String transcriptText, MultipartFile file) {
         ListeningAudio existing = requireAudio(audioId);
         requireActiveTest(testId);
         if (existing.getPartGroupId() != null || !Objects.equals(existing.getTestId(), testId)) {
@@ -90,17 +94,18 @@ public class ListeningAudioServiceImpl implements ListeningAudioService {
         existing.setTitle(trimToNull(title));
         existing.setAudioUrl(uploaded.getFileUrl());
         existing.setAudioObjectKey(uploaded.getFileKey());
-        existing.setTranscriptText(resolveTranscript(uploaded.getFileUrl()));
+        existing.setTranscriptText(trimToNull(transcriptText));
         existing.setUpdatedTime(LocalDateTime.now());
 
         listeningAudioMapper.updateListeningAudio(existing);
         deleteListeningAudioObjectQuietly(oldObjectKey);
+        scheduleTranscriptGenerationIfNeeded(existing, transcriptText);
         return existing;
     }
 
     @Override
     @Transactional
-    public ListeningAudio createPartGroupAudioFromUpload(Long testId, Long partGroupId, String title, MultipartFile file) {
+    public ListeningAudio createPartGroupAudioFromUpload(Long testId, Long partGroupId, String title, String transcriptText, MultipartFile file) {
         requireActiveTest(testId);
         requireActivePartGroup(testId, partGroupId);
         validateUploadFile(file);
@@ -114,18 +119,19 @@ public class ListeningAudioServiceImpl implements ListeningAudioService {
         audio.setTitle(trimToNull(title));
         audio.setAudioUrl(uploaded.getFileUrl());
         audio.setAudioObjectKey(uploaded.getFileKey());
-        audio.setTranscriptText(resolveTranscript(uploaded.getFileUrl()));
+        audio.setTranscriptText(trimToNull(transcriptText));
         audio.setIsDeleted(ListeningConstants.NOT_DELETED);
         audio.setCreatedTime(LocalDateTime.now());
         audio.setUpdatedTime(LocalDateTime.now());
 
         listeningAudioMapper.insertListeningAudio(audio);
+        scheduleTranscriptGenerationIfNeeded(audio, transcriptText);
         return audio;
     }
 
     @Override
     @Transactional
-    public ListeningAudio updatePartGroupAudioFromUpload(Long audioId, Long testId, Long partGroupId, String title, MultipartFile file) {
+    public ListeningAudio updatePartGroupAudioFromUpload(Long audioId, Long testId, Long partGroupId, String title, String transcriptText, MultipartFile file) {
         ListeningAudio existing = requireAudio(audioId);
         requireActiveTest(testId);
         requireActivePartGroup(testId, partGroupId);
@@ -143,11 +149,27 @@ public class ListeningAudioServiceImpl implements ListeningAudioService {
         existing.setTitle(trimToNull(title));
         existing.setAudioUrl(uploaded.getFileUrl());
         existing.setAudioObjectKey(uploaded.getFileKey());
-        existing.setTranscriptText(resolveTranscript(uploaded.getFileUrl()));
+        existing.setTranscriptText(trimToNull(transcriptText));
         existing.setUpdatedTime(LocalDateTime.now());
 
         listeningAudioMapper.updateListeningAudio(existing);
         deleteListeningAudioObjectQuietly(oldObjectKey);
+        scheduleTranscriptGenerationIfNeeded(existing, transcriptText);
+        return existing;
+    }
+
+    @Override
+    @Transactional
+    public ListeningAudio updateAudioMetadata(Long audioId, String title, String transcriptText) {
+        ListeningAudio existing = requireAudio(audioId);
+        if (title != null) {
+            existing.setTitle(trimToNull(title));
+        }
+        if (transcriptText != null) {
+            existing.setTranscriptText(trimToNull(transcriptText));
+        }
+        existing.setUpdatedTime(LocalDateTime.now());
+        listeningAudioMapper.updateListeningAudio(existing);
         return existing;
     }
 
@@ -207,8 +229,39 @@ public class ListeningAudioServiceImpl implements ListeningAudioService {
         );
     }
 
-    private String resolveTranscript(String audioUrl) {
-        return listeningTranscriptService.generateTranscript(audioUrl);
+    private void scheduleTranscriptGenerationIfNeeded(ListeningAudio audio, String transcriptText) {
+        if (trimToNull(transcriptText) != null || audio == null || audio.getId() == null || trimToNull(audio.getAudioUrl()) == null) {
+            return;
+        }
+        Runnable task = () -> generateAndStoreTranscript(audio.getId(), audio.getAudioUrl());
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    CompletableFuture.runAsync(task);
+                }
+            });
+            return;
+        }
+        CompletableFuture.runAsync(task);
+    }
+
+    private void generateAndStoreTranscript(Long audioId, String audioUrl) {
+        try {
+            String transcriptText = trimToNull(listeningTranscriptService.generateTranscript(audioUrl));
+            if (transcriptText == null) {
+                return;
+            }
+            ListeningAudio existing = listeningAudioMapper.findById(audioId);
+            if (existing == null || !Objects.equals(existing.getAudioUrl(), audioUrl)) {
+                return;
+            }
+            existing.setTranscriptText(transcriptText);
+            existing.setUpdatedTime(LocalDateTime.now());
+            listeningAudioMapper.updateListeningAudio(existing);
+        } catch (Exception e) {
+            log.error("Failed to store generated listening transcript, audioId={}, audioUrl={}", audioId, audioUrl, e);
+        }
     }
 
     private void deleteListeningAudioObjectsQuietly(List<ListeningAudio> audios) {

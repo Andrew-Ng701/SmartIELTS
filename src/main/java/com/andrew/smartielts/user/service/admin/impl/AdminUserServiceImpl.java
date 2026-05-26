@@ -3,16 +3,15 @@ package com.andrew.smartielts.user.service.admin.impl;
 import com.andrew.smartielts.auth.domain.pojo.User;
 import com.andrew.smartielts.common.page.PageResult;
 import com.andrew.smartielts.common.page.SortDirectionEnum;
-import com.andrew.smartielts.record.constants.UserRecordModuleConstants;
-import com.andrew.smartielts.record.constants.UserRecordStateConstants;
-import com.andrew.smartielts.record.domain.query.UserRecordPageQuery;
-import com.andrew.smartielts.record.domain.vo.UserRecordItemVO;
+import com.andrew.smartielts.record.domain.query.admin.AdminUserScopedRecordListQuery;
+import com.andrew.smartielts.record.domain.vo.UserRecordDetailVO;
+import com.andrew.smartielts.record.domain.vo.admin.AdminUserRecordListItemVO;
 import com.andrew.smartielts.record.service.UserRecordService;
+import com.andrew.smartielts.record.service.admin.AdminUserRecordService;
 import com.andrew.smartielts.user.domain.query.admin.AdminDeletedUserPageQuery;
 import com.andrew.smartielts.user.domain.query.admin.AdminUserPageQuery;
 import com.andrew.smartielts.user.domain.vo.AdminUserListVO;
 import com.andrew.smartielts.user.domain.vo.UserAdminDetailVO;
-import com.andrew.smartielts.user.domain.vo.UserAdminRecordPagesVO;
 import com.andrew.smartielts.user.domain.vo.UserAdminVO;
 import com.andrew.smartielts.user.domain.vo.UserRecordCountVO;
 import com.andrew.smartielts.user.mapper.UserMapper;
@@ -21,11 +20,9 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.util.Collections;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -40,15 +37,11 @@ public class AdminUserServiceImpl implements AdminUserService {
     private static final String SORT_FIELD_CREATED_TIME = "createdTime";
     private static final String SORT_FIELD_DELETED_TIME = "deletedTime";
     private static final String SORT_FIELD_LAST_LOGIN_TIME = "lastLoginTime";
-    private static final List<String> RECORD_MODULE_TYPES = List.of(
-            UserRecordModuleConstants.LISTENING,
-            UserRecordModuleConstants.READING,
-            UserRecordModuleConstants.WRITING,
-            UserRecordModuleConstants.SPEAKING
-    );
+    private static final int IELTS_TARGET_SCORE_PART_COUNT = 4;
 
     private final UserMapper userMapper;
     private final UserRecordService userRecordService;
+    private final AdminUserRecordService adminUserRecordService;
 
     @Override
     public AdminUserListVO listUsers(AdminUserPageQuery query) {
@@ -70,7 +63,7 @@ public class AdminUserServiceImpl implements AdminUserService {
 
         Long total = userMapper.countActive(safeQuery);
         List<User> users = userMapper.pageActive(safeQuery, offset, pageSize);
-        List<UserAdminVO> list = attachRecordCounts(users.stream().map(this::toVO).toList());
+        List<UserAdminVO> list = users.stream().map(this::toVO).toList();
 
         return new PageResult<>(list, total, pageNum, pageSize);
     }
@@ -105,9 +98,27 @@ public class AdminUserServiceImpl implements AdminUserService {
         vo.setLastLoginTime(user.getLastLoginTime());
         vo.setProfilePictureUrl(user.getProfilePictureUrl());
         vo.setProfilePictureObjectKey(user.getProfilePictureObjectKey());
+        applyIeltsTargetScores(vo, user.getIeltsTargetScores());
         attachRecordCounts(vo, userId);
-        vo.setRecordsByModule(buildRecordsByModule(userId));
         return vo;
+    }
+
+    @Override
+    public UserRecordDetailVO getUserRecordDetail(Long userId, String moduleType, Long recordId) {
+        User user = userMapper.findAnyById(userId);
+        if (user == null) {
+            throw new RuntimeException("User not found");
+        }
+        return userRecordService.getRecord(userId, moduleType, recordId);
+    }
+
+    @Override
+    public PageResult<AdminUserRecordListItemVO> listUserRecords(Long userId, AdminUserScopedRecordListQuery query) {
+        User user = userMapper.findAnyById(userId);
+        if (user == null) {
+            throw new RuntimeException("User not found");
+        }
+        return adminUserRecordService.listRecordsForUser(userId, query);
     }
 
     @Override
@@ -166,40 +177,11 @@ public class AdminUserServiceImpl implements AdminUserService {
         vo.setDeletedTime(user.getDeletedTime());
         vo.setCreatedTime(user.getCreatedTime());
         vo.setLastLoginTime(user.getLastLoginTime());
+        vo.setConsecutiveLoginDays(user.getConsecutiveLoginDays());
         vo.setProfilePictureUrl(user.getProfilePictureUrl());
         vo.setProfilePictureObjectKey(user.getProfilePictureObjectKey());
+        applyIeltsTargetScores(vo, user.getIeltsTargetScores());
         return vo;
-    }
-
-    private List<UserAdminVO> attachRecordCounts(List<UserAdminVO> users) {
-        if (users == null || users.isEmpty()) {
-            return users;
-        }
-        List<Long> userIds = users.stream()
-                .map(UserAdminVO::getId)
-                .filter(id -> id != null && id > 0)
-                .toList();
-        if (userIds.isEmpty()) {
-            return users;
-        }
-        List<UserRecordCountVO> recordCounts = userMapper.selectRecordCountsByUserIds(userIds);
-        if (recordCounts == null) {
-            recordCounts = Collections.emptyList();
-        }
-        Map<Long, List<UserRecordCountVO>> countsByUserId = recordCounts
-                .stream()
-                .collect(Collectors.groupingBy(
-                        UserRecordCountVO::getUserId,
-                        LinkedHashMap::new,
-                        Collectors.toList()
-                ));
-        for (UserAdminVO user : users) {
-            List<UserRecordCountVO> userRecordCounts = countsByUserId.getOrDefault(user.getId(), Collections.emptyList());
-            user.setRecordCounts(userRecordCounts);
-            user.setTotalActiveRecordCount(sumActiveRecordCount(userRecordCounts));
-            user.setTotalDeletedRecordCount(sumDeletedRecordCount(userRecordCounts));
-        }
-        return users;
     }
 
     private void attachRecordCounts(UserAdminDetailVO user, Long userId) {
@@ -210,27 +192,6 @@ public class AdminUserServiceImpl implements AdminUserService {
         user.setRecordCounts(recordCounts);
         user.setTotalActiveRecordCount(sumActiveRecordCount(recordCounts));
         user.setTotalDeletedRecordCount(sumDeletedRecordCount(recordCounts));
-    }
-
-    private Map<String, UserAdminRecordPagesVO> buildRecordsByModule(Long userId) {
-        Map<String, UserAdminRecordPagesVO> recordsByModule = new LinkedHashMap<>();
-        for (String moduleType : RECORD_MODULE_TYPES) {
-            UserAdminRecordPagesVO pages = new UserAdminRecordPagesVO();
-            pages.setActiveRecords(pageUserRecords(userId, moduleType, UserRecordStateConstants.ACTIVE));
-            pages.setDeletedRecords(pageUserRecords(userId, moduleType, UserRecordStateConstants.DELETED));
-            recordsByModule.put(moduleType, pages);
-        }
-        return recordsByModule;
-    }
-
-    private PageResult<UserRecordItemVO> pageUserRecords(Long userId, String moduleType, String recordState) {
-        UserRecordPageQuery query = new UserRecordPageQuery();
-        query.setModuleType(moduleType);
-        query.setRecordState(recordState);
-        query.setPageNum(DEFAULT_PAGE_NUM);
-        query.setPageSize(DEFAULT_PAGE_SIZE);
-        query.setSortDirection(SortDirectionEnum.DESC);
-        return userRecordService.pageRecords(userId, query);
     }
 
     private Long sumActiveRecordCount(List<UserRecordCountVO> recordCounts) {
@@ -286,4 +247,40 @@ public class AdminUserServiceImpl implements AdminUserService {
         String trimmed = text.trim();
         return trimmed.isEmpty() ? null : trimmed;
     }
+
+    private void applyIeltsTargetScores(UserAdminVO vo, String rawScores) {
+        List<BigDecimal> scores = decodeIeltsTargetScores(rawScores);
+        vo.setListeningTargetScore(scores.get(0));
+        vo.setReadingTargetScore(scores.get(1));
+        vo.setWritingTargetScore(scores.get(2));
+        vo.setSpeakingTargetScore(scores.get(3));
+    }
+
+    private void applyIeltsTargetScores(UserAdminDetailVO vo, String rawScores) {
+        List<BigDecimal> scores = decodeIeltsTargetScores(rawScores);
+        vo.setListeningTargetScore(scores.get(0));
+        vo.setReadingTargetScore(scores.get(1));
+        vo.setWritingTargetScore(scores.get(2));
+        vo.setSpeakingTargetScore(scores.get(3));
+    }
+
+    private List<BigDecimal> decodeIeltsTargetScores(String rawScores) {
+        List<BigDecimal> scores = new java.util.ArrayList<>();
+        for (int i = 0; i < IELTS_TARGET_SCORE_PART_COUNT; i++) {
+            scores.add(null);
+        }
+        if (rawScores == null || rawScores.isBlank()) {
+            return scores;
+        }
+        String[] parts = rawScores.split(",", -1);
+        for (int i = 0; i < Math.min(parts.length, IELTS_TARGET_SCORE_PART_COUNT); i++) {
+            String part = parts[i] == null ? "" : parts[i].trim();
+            if (!part.isEmpty()) {
+                scores.set(i, new BigDecimal(part).stripTrailingZeros());
+            }
+        }
+        return scores;
+    }
 }
+
+

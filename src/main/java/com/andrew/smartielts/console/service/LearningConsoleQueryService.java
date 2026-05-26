@@ -2,6 +2,7 @@ package com.andrew.smartielts.console.service;
 
 import com.andrew.smartielts.admin.domain.vo.AdminRecentIssueVO;
 import com.andrew.smartielts.admin.domain.vo.AdminUserConsoleSummaryVO;
+import com.andrew.smartielts.console.domain.vo.AdminConsoleLeaderboardVO;
 import com.andrew.smartielts.dashboard.domain.vo.AdminAiFailureVO;
 import com.andrew.smartielts.dashboard.domain.vo.AdminModuleStatVO;
 import com.andrew.smartielts.dashboard.domain.vo.AdminOverviewVO;
@@ -41,4 +42,6 @@ public interface LearningConsoleQueryService {
     AdminUserRecordSummaryVO adminUserRecordSummary(Long targetUserId);
 
     AdminUserConsoleSummaryVO adminUserConsoleSummary(Long userId);
+
+    List<AdminConsoleLeaderboardVO> adminUserLeaderboards(Integer limit);
 }

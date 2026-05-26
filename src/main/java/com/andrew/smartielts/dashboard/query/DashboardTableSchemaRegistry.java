@@ -92,14 +92,17 @@ public class DashboardTableSchemaRegistry {
         return new DashboardTableSchemaContract(
                 TABLE_SYS_USER,
                 "System user queries. Use for user counts and admin-level user identity scope.",
-                columns("id", "email", "username", "role", "is_deleted", "created_time", "ielts_target_scores"),
+                columns("id", "email", "username", "role", "is_deleted", "created_time", "last_login_time",
+                        "consecutive_login_days", "ielts_target_scores"),
                 joinMap(),
-                aliases("user_id", "email", "username", "role", "is_deleted", "created_time", "ielts_target_scores",
-                        "total_users", "active_users", "deleted_users"),
+                aliases("user_id", "email", "username", "role", "is_deleted", "created_time", "last_login_time",
+                        "consecutive_login_days", "login_streak_days", "ielts_target_scores", "total_users",
+                        "active_users", "deleted_users"),
                 params("target_user_id", "limit"),
                 List.of(
                         "Use sys_user only for user identity or admin user counting.",
                         "ielts_target_scores stores target bands as listening,reading,writing,speaking.",
+                        "consecutive_login_days is the backend-maintained current login streak.",
                         "Do not use sys_user as a replacement for learner record tables."
                 )
         );
@@ -112,7 +115,7 @@ public class DashboardTableSchemaRegistry {
                 columns("id", "test_id", "part_group_id", "audio_scope", "title", "audio_url", "audio_object_key",
                         "transcript_text", "is_deleted", "created_time", "updated_time"),
                 joinMap(
-                        join(TABLE_LISTENING_TEST, columns("id", "title", "total_score", "timer_mode", "total_seconds", "is_deleted")),
+                        join(TABLE_LISTENING_TEST, columns("id", "title", "total_score", "timer_mode", "prep_seconds", "total_seconds", "is_deleted")),
                         join(TABLE_LISTENING_PART_GROUP, columns("id", "test_id", "part_number", "group_number", "title",
                                 "instruction_text", "group_guide_text", "group_requirement_text",
                                 "question_type", "answer_mode", "options_json", "accepted_answers_json",
@@ -141,7 +144,7 @@ public class DashboardTableSchemaRegistry {
                 joinMap(
                         join(TABLE_LISTENING_AUDIO, columns("id", "test_id", "part_group_id", "audio_scope", "title",
                                 "audio_url", "audio_object_key", "transcript_text", "is_deleted")),
-                        join(TABLE_LISTENING_TEST, columns("id", "title", "total_score", "timer_mode", "total_seconds", "is_deleted")),
+                        join(TABLE_LISTENING_TEST, columns("id", "title", "total_score", "timer_mode", "prep_seconds", "total_seconds", "is_deleted")),
                         join(TABLE_LISTENING_PART_GROUP, columns("id", "test_id", "part_number", "group_number", "title",
                                 "instruction_text", "group_guide_text", "group_requirement_text",
                                 "question_type", "answer_mode", "options_json", "accepted_answers_json",
@@ -170,7 +173,7 @@ public class DashboardTableSchemaRegistry {
                 columns("id", "user_id", "test_id", "session_id", "started_time", "submitted_time", "time_limit_seconds",
                         "time_spent_seconds", "record_status", "total_score", "created_time", "is_deleted"),
                 joinMap(
-                        join(TABLE_LISTENING_TEST, columns("id", "title", "total_score", "timer_mode", "total_seconds", "is_deleted")),
+                        join(TABLE_LISTENING_TEST, columns("id", "title", "total_score", "timer_mode", "prep_seconds", "total_seconds", "is_deleted")),
                         join(TABLE_LISTENING_ANSWER_RECORD, columns("id", "record_id", "part_group_id", "question_id",
                                 "user_answer", "normalized_answer", "raw_answers_json", "is_correct", "score")),
                         join(TABLE_LISTENING_QUESTION, columns("id", "test_id", "part_group_id", "section_number", "question_number",
@@ -208,7 +211,7 @@ public class DashboardTableSchemaRegistry {
                 columns("id", "test_id", "part_group_id", "title", "material_type", "content", "display_order",
                         "is_deleted", "passage_no"),
                 joinMap(
-                        join(TABLE_READING_TEST, columns("id", "title", "total_score", "timer_mode", "total_seconds", "is_deleted")),
+                        join(TABLE_READING_TEST, columns("id", "title", "total_score", "timer_mode", "prep_seconds", "total_seconds", "is_deleted")),
                         join(TABLE_READING_PART_GROUP, columns("id", "test_id", "part_number", "group_number", "title",
                                 "instruction_text", "group_guide_text", "group_requirement_text",
                                 "question_no_start", "question_no_end", "display_order", "time_limit_seconds", "is_deleted")),
@@ -239,7 +242,7 @@ public class DashboardTableSchemaRegistry {
                 joinMap(
                         join(TABLE_READING_PASSAGE, columns("id", "test_id", "part_group_id", "title", "material_type",
                                 "content", "display_order", "is_deleted", "passage_no")),
-                        join(TABLE_READING_TEST, columns("id", "title", "total_score", "timer_mode", "total_seconds", "is_deleted")),
+                        join(TABLE_READING_TEST, columns("id", "title", "total_score", "timer_mode", "prep_seconds", "total_seconds", "is_deleted")),
                         join(TABLE_READING_PART_GROUP, columns("id", "test_id", "part_number", "group_number", "title",
                                 "instruction_text", "group_guide_text", "group_requirement_text",
                                 "question_no_start", "question_no_end", "display_order", "time_limit_seconds", "is_deleted")),
@@ -270,7 +273,7 @@ public class DashboardTableSchemaRegistry {
                 columns("id", "user_id", "test_id", "session_id", "started_time", "submitted_time", "time_limit_seconds",
                         "time_spent_seconds", "record_status", "total_score", "created_time", "is_deleted"),
                 joinMap(
-                        join(TABLE_READING_TEST, columns("id", "title", "total_score", "timer_mode", "total_seconds", "is_deleted")),
+                        join(TABLE_READING_TEST, columns("id", "title", "total_score", "timer_mode", "prep_seconds", "total_seconds", "is_deleted")),
                         join(TABLE_READING_ANSWER_RECORD, columns("id", "record_id", "part_group_id", "question_id",
                                 "user_answer", "normalized_answer", "raw_answers_json", "is_correct", "score")),
                         join(TABLE_READING_QUESTION, columns("id", "passage_id", "part_group_id", "question_number",
@@ -302,12 +305,12 @@ public class DashboardTableSchemaRegistry {
     private DashboardTableSchemaContract writingQuestionContract() {
         return new DashboardTableSchemaContract(
                 TABLE_WRITING_QUESTION,
-                "Writing question queries. Use for writing prompt, description, task type, and image metadata.",
-                columns("id", "task_type", "title", "description", "image_url", "image_object_key", "created_time",
-                        "is_deleted", "deleted_time", "image_target_migrated"),
+                "Writing question queries. Use for writing prompt, description, task type, and image detail metadata.",
+                columns("id", "task_type", "title", "description", "image_detail_description", "prep_seconds", "total_seconds", "created_time",
+                        "is_deleted", "deleted_time"),
                 joinMap(),
-                aliases("module", "question_id", "task_type", "title", "description", "image_url",
-                        "image_object_key", "created_time", "image_target_migrated"),
+                aliases("module", "question_id", "task_type", "title", "description", "image_detail_description",
+                        "prep_seconds", "total_seconds", "created_time"),
                 params("question_id", "task_type", "limit"),
                 List.of(
                         "Use writing_question for prompt-only or image-only requests.",
@@ -324,15 +327,15 @@ public class DashboardTableSchemaRegistry {
                         "ai_score", "ai_feedback", "ai_raw_response", "ai_status", "ai_provider", "ai_model",
                         "created_time", "is_deleted", "deleted_time"),
                 joinMap(
-                        join(TABLE_WRITING_QUESTION, columns("id", "task_type", "title", "description", "image_url",
-                                "image_object_key", "created_time", "is_deleted", "deleted_time", "image_target_migrated")),
+                        join(TABLE_WRITING_QUESTION, columns("id", "task_type", "title", "description", "image_detail_description",
+                                "prep_seconds", "total_seconds", "created_time", "is_deleted", "deleted_time")),
                         join(TABLE_WRITING_RECORD_ATTACHMENT, columns("id", "record_id", "file_type", "file_url", "file_key",
                                 "sort_order", "created_time", "ocr_text"))
                 ),
                 aliases("module", "record_id", "user_id", "question_id", "input_type", "text_content", "extracted_text",
                         "target_score", "ai_score", "ai_feedback", "ai_raw_response", "ai_status", "ai_provider",
-                        "ai_model", "created_time", "task_type", "question_title", "question_text", "image_url",
-                        "image_object_key", "image_target_migrated", "attachment_id", "attachment_file_type",
+                        "ai_model", "created_time", "task_type", "question_title", "question_text", "image_detail_description",
+                        "image_url", "image_object_key", "attachment_id", "attachment_file_type",
                         "attachment_file_url", "attachment_file_key", "attachment_sort_order", "attachment_created_time",
                         "attachment_ocr_text"),
                 params("target_user_id", "record_id", "question_id", "limit"),

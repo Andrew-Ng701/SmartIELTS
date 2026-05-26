@@ -4,6 +4,8 @@ import lombok.Data;
 
 @Data
 public class ReadingPassageDTO {
+    private Long id;
+    private String clientKey;
     private Long testId;
     private Long partGroupId;
     private Integer passageNo;

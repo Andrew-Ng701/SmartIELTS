@@ -18,11 +18,19 @@ public class WritingRecordDetailVO {
 
     private String questionDescription;
 
+    private String prompt;
+
+    private String imageDetailDescription;
+
     private String questionImageUrl;
 
     private List<BizImageResource> questionImages;
 
+    private List<WritingPreviewAssetVO> previewAssets;
+
     private String taskType;
+
+    private String chartType;
 
     private String inputType;
 

@@ -1,6 +1,7 @@
 package com.andrew.smartielts.record.controller;
 
 import com.andrew.smartielts.common.resultDTO.Result;
+import com.andrew.smartielts.record.domain.query.UserRecordListQuery;
 import com.andrew.smartielts.record.domain.query.UserRecordPageQuery;
 import com.andrew.smartielts.record.service.UserRecordService;
 import com.andrew.smartielts.utils.SecurityUtils;
@@ -30,6 +31,13 @@ public class UserRecordController {
         this.userRecordService = userRecordService;
     }
 
+    @Operation(summary = "List current user records across all modules")
+    @GetMapping
+    public Result<?> listRecords(UserRecordListQuery query) {
+        Long userId = SecurityUtils.getCurrentUserId();
+        return Result.success(userRecordService.listRecords(userId, query));
+    }
+
     @Operation(summary = "User records overview")
     @PostMapping("/overview")
     public Result<?> pageRecords(@RequestBody(required = false) UserRecordPageQuery query) {
@@ -42,6 +50,14 @@ public class UserRecordController {
     public Result<?> getRecord(@PathVariable String moduleType, @PathVariable Long recordId) {
         Long userId = SecurityUtils.getCurrentUserId();
         return Result.success(userRecordService.getRecord(userId, moduleType, recordId));
+    }
+
+    @Operation(summary = "Get listening record section script")
+    @GetMapping("/listening/{recordId}/sections/{sectionNumber}/script")
+    public Result<?> getListeningSectionScript(@PathVariable Long recordId,
+                                               @PathVariable Integer sectionNumber) {
+        Long userId = SecurityUtils.getCurrentUserId();
+        return Result.success(userRecordService.getListeningSectionScript(userId, recordId, sectionNumber));
     }
 
     @Operation(summary = "Delete user record")

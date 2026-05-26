@@ -11,7 +11,9 @@ public class ReadingTestDTO {
     private Integer totalScore;
 
     private String timerMode;
-    private Integer totalSeconds;
+    private Integer prepMinutes;
+    private Integer totalMinutes;
+    private Integer prepSeconds;
     private Integer autoSubmit;
     private Integer allowPause;
 

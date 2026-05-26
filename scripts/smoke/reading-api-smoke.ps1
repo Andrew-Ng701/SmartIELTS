@@ -436,7 +436,7 @@ function Assert-FrontendReadingDetailReady {
 
 function Assert-SessionShape {
     param([object]$Session)
-    foreach ($field in @("recordId", "testId", "sessionId", "recordStatus", "timeLimitSeconds", "timeSpentSeconds", "remainingSeconds", "allowPause", "autoSubmit")) {
+    foreach ($field in @("recordId", "testId", "sessionId", "recordStatus", "prepSeconds", "timeLimitSeconds", "prepMinutes", "totalMinutes", "timeSpentSeconds", "remainingSeconds", "allowPause", "autoSubmit")) {
         Assert-True ($Session.PSObject.Properties.Name -contains $field) "session missing $field"
     }
     Assert-True (-not [string]::IsNullOrWhiteSpace($Session.sessionId)) "sessionId is blank"
@@ -465,9 +465,7 @@ function Assert-DocsReadingContract {
         "/api/user/reading/records/overview",
         "/api/admin/reading/tests",
         "/api/admin/reading/tests/{testId}",
-        "/api/admin/reading/tests/{testId}/part-groups",
-        "/api/admin/reading/part-groups/{partGroupId}",
-        "/api/admin/reading/passages/{passageId}/questions",
+        "/api/admin/reading/tests/{testId}/full",
         "/api/admin/reading/records/overview"
     )) {
         Assert-True ($doc.Contains($path)) "frontend API doc missing $path"
@@ -514,7 +512,8 @@ try {
         title = $emptyTitle
         totalScore = 1
         timerMode = "TEST_LEVEL"
-        totalSeconds = 600
+        prepMinutes = 1
+        totalMinutes = 10
         autoSubmit = 1
         allowPause = 0
     } $true "ADMIN_CREATE_TEST"
@@ -529,7 +528,8 @@ try {
         title = $tempTitle
         totalScore = 1
         timerMode = "TEST_LEVEL"
-        totalSeconds = 900
+        prepMinutes = 1
+        totalMinutes = 15
         autoSubmit = 1
         allowPause = 1
     } $true "ADMIN_CREATE_TEST"
@@ -539,75 +539,142 @@ try {
         title = "$tempTitle Updated"
         totalScore = 1
         timerMode = "TEST_LEVEL"
-        totalSeconds = 900
+        prepMinutes = 1
+        totalMinutes = 15
         autoSubmit = 1
         allowPause = 1
     } $true "ADMIN_UPDATE_TEST" | Out-Null
     $adminTests = Invoke-Api "GET" "/admin/reading/tests" $adminToken $null $true "ADMIN_LIST_TESTS"
     Assert-True (@($adminTests.data | Where-Object { [long]$_.id -eq $Script:CreatedTestId }).Count -eq 1) "created reading test missing from admin list"
 
-    Invoke-Api "POST" "/admin/reading/tests/$Script:CreatedTestId/part-groups" $adminToken @{
-        partNumber = 0
-        groupNumber = 1
-        title = "Invalid part"
-        questionNoStart = 1
-        questionNoEnd = 1
-    } $false | Out-Null
-    Invoke-Api "POST" "/admin/reading/tests/$Script:CreatedTestId/part-groups" $adminToken @{
-        partNumber = 1
-        groupNumber = 1
-        title = "Invalid range"
-        questionNoStart = 2
-        questionNoEnd = 1
-    } $false | Out-Null
-
-    $group = Invoke-Api "POST" "/admin/reading/tests/$Script:CreatedTestId/part-groups" $adminToken @{
-        partNumber = 1
-        groupNumber = 1
-        title = "Passage Group"
-        instructionText = "Read the passage and answer the question."
-        groupGuideText = "Questions 1"
-        groupRequirementText = "ONE WORD ONLY"
-        questionType = "SHORT_ANSWER"
-        answerMode = "TEXT"
-        acceptedAnswersJson = "[""alpha""]"
-        answerRulesJson = "[]"
-        questionNoStart = 1
-        questionNoEnd = 1
-        displayOrder = 1
-        timeLimitSeconds = 0
-        images = @(@{
-            objectKey = "smoke/reading-group.png"
-            fileUrl = "https://example.test/smoke/reading-group.png"
-            originalName = "reading-group.png"
-            contentType = "image/png"
-            fileSize = 10
-            width = 100
-            height = 100
-            sortOrder = 1
+    $groupSave = Invoke-Api "PUT" "/admin/reading/tests/$Script:CreatedTestId/full" $adminToken @{
+        test = @{
+            title = "$tempTitle Updated"
+            totalScore = 1
+            timerMode = "TEST_LEVEL"
+            prepMinutes = 1
+            totalMinutes = 15
+            autoSubmit = 1
+            allowPause = 1
+        }
+        partGroups = @(@{
+            partNumber = 1
+            groupNumber = 1
+            title = "Passage Group"
+            instructionText = "Read the passage and answer the question."
+            groupGuideText = "Questions 1"
+            groupRequirementText = "ONE WORD ONLY"
+            questionType = "SHORT_ANSWER"
+            answerMode = "TEXT"
+            acceptedAnswersJson = "[""alpha""]"
+            answerRulesJson = "[]"
+            questionNoStart = 1
+            questionNoEnd = 1
+            displayOrder = 1
+            timeLimitSeconds = 0
+            images = @(@{
+                objectKey = "smoke/reading-group.png"
+                fileUrl = "https://example.test/smoke/reading-group.png"
+                originalName = "reading-group.png"
+                contentType = "image/png"
+                fileSize = 10
+                width = 100
+                height = 100
+                sortOrder = 1
+            })
         })
-    } $true "ADMIN_CREATE_PART_GROUP"
-    $Script:CreatedGroupId = [long]$group.data.id
+        passages = @()
+        questions = @()
+    } $true "ADMIN_SAVE_FULL_GROUP"
+    $Script:CreatedGroupId = [long]@($groupSave.data.partGroups)[0].id
 
-    Invoke-Api "POST" "/admin/reading/tests/$Script:CreatedTestId/passages" $adminToken @{
-        partGroupId = $Script:CreatedGroupId
-        passageNo = 1
-        title = "Smoke Passage"
-        content = "Alpha is the answer in this temporary passage."
-        materialType = "TEXT"
-        displayOrder = 1
-    } $true "ADMIN_CREATE_PASSAGE" | Out-Null
-    $Script:CreatedPassageId = [long](Invoke-MysqlScalar "SELECT id FROM reading_passage WHERE test_id = $Script:CreatedTestId AND part_group_id = $Script:CreatedGroupId ORDER BY id DESC LIMIT 1;")
+    $passageSave = Invoke-Api "PUT" "/admin/reading/tests/$Script:CreatedTestId/full" $adminToken @{
+        test = @{
+            title = "$tempTitle Updated"
+            totalScore = 1
+            timerMode = "TEST_LEVEL"
+            prepMinutes = 1
+            totalMinutes = 15
+            autoSubmit = 1
+            allowPause = 1
+        }
+        partGroups = @(@{
+            id = $Script:CreatedGroupId
+            partNumber = 1
+            groupNumber = 1
+            title = "Passage Group"
+            instructionText = "Read the passage and answer the question."
+            groupGuideText = "Questions 1"
+            groupRequirementText = "ONE WORD ONLY"
+            questionType = "SHORT_ANSWER"
+            answerMode = "TEXT"
+            acceptedAnswersJson = "[""alpha""]"
+            answerRulesJson = "[]"
+            questionNoStart = 1
+            questionNoEnd = 1
+            displayOrder = 1
+            timeLimitSeconds = 0
+        })
+        passages = @(@{
+            partGroupId = $Script:CreatedGroupId
+            passageNo = 1
+            title = "Smoke Passage"
+            content = "Alpha is the answer in this temporary passage."
+            materialType = "TEXT"
+            displayOrder = 1
+        })
+        questions = @()
+    } $true "ADMIN_SAVE_FULL_PASSAGE"
+    $Script:CreatedPassageId = [long]@($passageSave.data.parts[0].groups[0].passages)[0].id
 
-    Invoke-Api "POST" "/admin/reading/passages/$Script:CreatedPassageId/questions" $adminToken @{
-        partGroupId = $Script:CreatedGroupId
-        questionNumber = 1
-        questionType = "SHORT_ANSWER"
-        answerMode = "TEXT"
-        questionText = "What is the answer?"
-        displayOrder = 1
-        score = 1
-    } $true "ADMIN_CREATE_QUESTION" | Out-Null
+    $questionSave = Invoke-Api "PUT" "/admin/reading/tests/$Script:CreatedTestId/full" $adminToken @{
+        test = @{
+            title = "$tempTitle Updated"
+            totalScore = 1
+            timerMode = "TEST_LEVEL"
+            prepMinutes = 1
+            totalMinutes = 15
+            autoSubmit = 1
+            allowPause = 1
+        }
+        partGroups = @(@{
+            id = $Script:CreatedGroupId
+            partNumber = 1
+            groupNumber = 1
+            title = "Passage Group Updated"
+            instructionText = "Read the passage and answer the question."
+            groupGuideText = "Questions 1"
+            groupRequirementText = "ONE WORD ONLY"
+            questionType = "SHORT_ANSWER"
+            answerMode = "TEXT"
+            acceptedAnswersJson = "[""alpha""]"
+            answerRulesJson = "[]"
+            questionNoStart = 1
+            questionNoEnd = 1
+            displayOrder = 1
+            timeLimitSeconds = 0
+        })
+        passages = @(@{
+            id = $Script:CreatedPassageId
+            partGroupId = $Script:CreatedGroupId
+            passageNo = 1
+            title = "Smoke Passage Updated"
+            content = "Alpha is still the answer."
+            materialType = "TEXT"
+            displayOrder = 1
+        })
+        questions = @(@{
+            passageId = $Script:CreatedPassageId
+            partGroupId = $Script:CreatedGroupId
+            questionNumber = 1
+            questionType = "SHORT_ANSWER"
+            answerMode = "TEXT"
+            questionText = "What is the answer after update?"
+            correctAnswer = "alpha"
+            displayOrder = 1
+            score = 1
+        })
+    } $true "ADMIN_SAVE_FULL_QUESTION"
 
     $adminDetailForQuestion = Invoke-Api "GET" "/admin/reading/tests/$Script:CreatedTestId" $adminToken $null $true "ADMIN_GET_TEST_DETAIL"
     $createdQuestion = @($adminDetailForQuestion.data.questions | Where-Object { [long]$_.partGroupId -eq $Script:CreatedGroupId -and [int]$_.questionNumber -eq 1 })[0]
@@ -615,44 +682,58 @@ try {
     Assert-True ($Script:CreatedQuestionId -gt 0) "created reading question not found in admin detail"
 
     $ruleJson = "[{""questionId"":$Script:CreatedQuestionId,""questionNumber"":1,""answers"":[""alpha""]}]"
-    Invoke-Api "PUT" "/admin/reading/part-groups/$Script:CreatedGroupId" $adminToken @{
-        partNumber = 1
-        groupNumber = 1
-        title = "Passage Group Updated"
-        instructionText = "Read the passage and answer the question."
-        groupGuideText = "Questions 1"
-        groupRequirementText = "ONE WORD ONLY"
-        questionType = "SHORT_ANSWER"
-        answerMode = "TEXT"
-        acceptedAnswersJson = "[""alpha""]"
-        answerRulesJson = $ruleJson
-        questionNoStart = 1
-        questionNoEnd = 1
-        displayOrder = 1
-        timeLimitSeconds = 0
-    } $true "ADMIN_UPDATE_PART_GROUP" | Out-Null
-    Invoke-Api "PUT" "/admin/reading/questions/$Script:CreatedQuestionId" $adminToken @{
-        partGroupId = $Script:CreatedGroupId
-        questionNumber = 1
-        questionType = "SHORT_ANSWER"
-        answerMode = "TEXT"
-        questionText = "What is the answer after update?"
-        displayOrder = 1
-        score = 1
-    } $true "ADMIN_UPDATE_QUESTION" | Out-Null
-    Invoke-Api "PUT" "/admin/reading/passages/$Script:CreatedPassageId" $adminToken @{
-        partGroupId = $Script:CreatedGroupId
-        passageNo = 1
-        title = "Smoke Passage Updated"
-        content = "Alpha is still the answer."
-        materialType = "TEXT"
-        displayOrder = 1
-    } $true "ADMIN_UPDATE_PASSAGE" | Out-Null
+    Invoke-Api "PUT" "/admin/reading/tests/$Script:CreatedTestId/full" $adminToken @{
+        test = @{
+            title = "$tempTitle Updated"
+            totalScore = 1
+            timerMode = "TEST_LEVEL"
+            prepMinutes = 1
+            totalMinutes = 15
+            autoSubmit = 1
+            allowPause = 1
+        }
+        partGroups = @(@{
+            id = $Script:CreatedGroupId
+            partNumber = 1
+            groupNumber = 1
+            title = "Passage Group Updated"
+            instructionText = "Read the passage and answer the question."
+            groupGuideText = "Questions 1"
+            groupRequirementText = "ONE WORD ONLY"
+            questionType = "SHORT_ANSWER"
+            answerMode = "TEXT"
+            acceptedAnswersJson = "[""alpha""]"
+            answerRulesJson = $ruleJson
+            questionNoStart = 1
+            questionNoEnd = 1
+            displayOrder = 1
+            timeLimitSeconds = 0
+        })
+        passages = @(@{
+            id = $Script:CreatedPassageId
+            partGroupId = $Script:CreatedGroupId
+            passageNo = 1
+            title = "Smoke Passage Updated"
+            content = "Alpha is still the answer."
+            materialType = "TEXT"
+            displayOrder = 1
+        })
+        questions = @(@{
+            id = $Script:CreatedQuestionId
+            passageId = $Script:CreatedPassageId
+            partGroupId = $Script:CreatedGroupId
+            questionNumber = 1
+            questionType = "SHORT_ANSWER"
+            answerMode = "TEXT"
+            questionText = "What is the answer after update?"
+            correctAnswer = "alpha"
+            displayOrder = 1
+            score = 1
+        })
+    } $true "ADMIN_SAVE_FULL_UPDATE" | Out-Null
 
     $adminDetail = Invoke-Api "GET" "/admin/reading/tests/$Script:CreatedTestId" $adminToken $null $true "ADMIN_GET_TEST_DETAIL"
     Assert-FrontendReadingDetailReady $adminDetail.data $true $false
-    Invoke-Api "GET" "/admin/reading/tests/$Script:CreatedTestId/part-groups" $adminToken $null $true "ADMIN_LIST_PART_GROUPS" | Out-Null
-    Invoke-Api "GET" "/admin/reading/part-groups/$Script:CreatedGroupId" $adminToken $null $true "ADMIN_GET_PART_GROUP" | Out-Null
     Write-Pass "ADMIN setup and detail contract"
 
     $userList = Invoke-Api "GET" "/user/reading/tests" $userToken $null $true "USER_GET_TESTS"
@@ -707,15 +788,97 @@ try {
     $adminDeletedPage = Invoke-Api "POST" "/admin/reading/records/deleted/overview" $adminToken @{ pageNum = 1; pageSize = 10 } $true "ADMIN_DELETED_RECORDS_OVERVIEW"
     Assert-PageResult $adminDeletedPage.data 1 10
     Invoke-Api "PUT" "/admin/reading/records/$Script:CreatedRecordId/restore" $adminToken $null $true "ADMIN_RESTORE_RECORD" | Out-Null
-    Invoke-Api "DELETE" "/admin/reading/questions/$Script:CreatedQuestionId" $adminToken $null $true "ADMIN_DELETE_QUESTION" | Out-Null
-    Invoke-Api "PUT" "/admin/reading/questions/$Script:CreatedQuestionId/restore" $adminToken $null $true "ADMIN_RESTORE_QUESTION" | Out-Null
-    Invoke-Api "DELETE" "/admin/reading/passages/$Script:CreatedPassageId" $adminToken $null $true "ADMIN_DELETE_PASSAGE" | Out-Null
-    Invoke-Api "PUT" "/admin/reading/passages/$Script:CreatedPassageId/restore" $adminToken $null $true "ADMIN_RESTORE_PASSAGE" | Out-Null
-    Invoke-Api "DELETE" "/admin/reading/part-groups/$Script:CreatedGroupId" $adminToken $null $true "ADMIN_DELETE_PART_GROUP" | Out-Null
-    Invoke-Api "PUT" "/admin/reading/part-groups/$Script:CreatedGroupId/restore" $adminToken $null $true "ADMIN_RESTORE_PART_GROUP" | Out-Null
+    $omitQuestion = Invoke-Api "PUT" "/admin/reading/tests/$Script:CreatedTestId/full" $adminToken @{
+        test = @{
+            title = "$tempTitle Updated"
+            totalScore = 1
+            timerMode = "TEST_LEVEL"
+            prepMinutes = 1
+            totalMinutes = 15
+            autoSubmit = 1
+            allowPause = 1
+        }
+        partGroups = @(@{
+            id = $Script:CreatedGroupId
+            partNumber = 1
+            groupNumber = 1
+            title = "Passage Group Updated"
+            instructionText = "Read the passage and answer the question."
+            groupGuideText = "Questions 1"
+            groupRequirementText = "ONE WORD ONLY"
+            questionType = "SHORT_ANSWER"
+            answerMode = "TEXT"
+            acceptedAnswersJson = "[""alpha""]"
+            answerRulesJson = $ruleJson
+            questionNoStart = 1
+            questionNoEnd = 1
+            displayOrder = 1
+            timeLimitSeconds = 0
+        })
+        passages = @(@{
+            id = $Script:CreatedPassageId
+            partGroupId = $Script:CreatedGroupId
+            passageNo = 1
+            title = "Smoke Passage Updated"
+            content = "Alpha is still the answer."
+            materialType = "TEXT"
+            displayOrder = 1
+        })
+        questions = @()
+    } $true "ADMIN_SAVE_FULL_OMIT_QUESTION"
+    Assert-True (@($omitQuestion.data.questions).Count -eq 0) "full save omission did not hide deleted reading question"
+    Invoke-Api "PUT" "/admin/reading/tests/$Script:CreatedTestId/full" $adminToken @{
+        test = @{
+            title = "$tempTitle Updated"
+            totalScore = 1
+            timerMode = "TEST_LEVEL"
+            prepMinutes = 1
+            totalMinutes = 15
+            autoSubmit = 1
+            allowPause = 1
+        }
+        partGroups = @(@{
+            id = $Script:CreatedGroupId
+            partNumber = 1
+            groupNumber = 1
+            title = "Passage Group Updated"
+            instructionText = "Read the passage and answer the question."
+            groupGuideText = "Questions 1"
+            groupRequirementText = "ONE WORD ONLY"
+            questionType = "SHORT_ANSWER"
+            answerMode = "TEXT"
+            acceptedAnswersJson = "[""alpha""]"
+            answerRulesJson = $ruleJson
+            questionNoStart = 1
+            questionNoEnd = 1
+            displayOrder = 1
+            timeLimitSeconds = 0
+        })
+        passages = @(@{
+            id = $Script:CreatedPassageId
+            partGroupId = $Script:CreatedGroupId
+            passageNo = 1
+            title = "Smoke Passage Updated"
+            content = "Alpha is still the answer."
+            materialType = "TEXT"
+            displayOrder = 1
+        })
+        questions = @(@{
+            id = $Script:CreatedQuestionId
+            passageId = $Script:CreatedPassageId
+            partGroupId = $Script:CreatedGroupId
+            questionNumber = 1
+            questionType = "SHORT_ANSWER"
+            answerMode = "TEXT"
+            questionText = "What is the answer after update?"
+            correctAnswer = "alpha"
+            displayOrder = 1
+            score = 1
+        })
+    } $true "ADMIN_SAVE_FULL_RESTORE_QUESTION" | Out-Null
     Invoke-Api "DELETE" "/admin/reading/tests/$Script:CreatedTestId" $adminToken $null $true "ADMIN_DELETE_TEST" | Out-Null
     Invoke-Api "PUT" "/admin/reading/tests/$Script:CreatedTestId/restore" $adminToken $null $true "ADMIN_RESTORE_TEST" | Out-Null
-    Write-Pass "ADMIN record and delete/restore flow"
+    Write-Pass "ADMIN record and full-save delete/restore flow"
 
     Assert-AllEndpointsCovered
     Write-Pass "all reading endpoints covered"

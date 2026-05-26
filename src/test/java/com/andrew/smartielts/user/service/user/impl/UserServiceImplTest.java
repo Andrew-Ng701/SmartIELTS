@@ -4,7 +4,7 @@ import com.andrew.smartielts.auth.domain.pojo.User;
 import com.andrew.smartielts.common.storage.BucketType;
 import com.andrew.smartielts.common.storage.UploadResult;
 import com.andrew.smartielts.common.storage.service.OssStorageService;
-import com.andrew.smartielts.console.service.UserConsoleService;
+import com.andrew.smartielts.console.service.LearningConsoleQueryService;
 import com.andrew.smartielts.dashboard.domain.vo.UserModuleStatVO;
 import com.andrew.smartielts.user.domain.dto.UserProfileUpdateDTO;
 import com.andrew.smartielts.user.domain.vo.UserProfileVO;
@@ -38,14 +38,14 @@ class UserServiceImplTest {
     private UserMapper userMapper;
 
     @Mock
-    private UserConsoleService userConsoleService;
+    private LearningConsoleQueryService learningConsoleQueryService;
 
     @Mock
     private OssStorageService ossStorageService;
 
     @Test
     void updateProfile_shouldTrimLowercaseEmail() {
-        UserServiceImpl service = new UserServiceImpl(userMapper, userConsoleService, ossStorageService);
+        UserServiceImpl service = new UserServiceImpl(userMapper, learningConsoleQueryService, ossStorageService);
         User existing = user(9L, "old@example.com");
         User updated = user(9L, "new@example.com");
         UserProfileUpdateDTO dto = new UserProfileUpdateDTO();
@@ -67,7 +67,7 @@ class UserServiceImplTest {
 
     @Test
     void updateProfile_shouldTrimUsernameAndPersistTargetScoresInCompactOrder() {
-        UserServiceImpl service = new UserServiceImpl(userMapper, userConsoleService, ossStorageService);
+        UserServiceImpl service = new UserServiceImpl(userMapper, learningConsoleQueryService, ossStorageService);
         User existing = user(9L, "old@example.com");
         User updated = user(9L, "old@example.com");
         updated.setUsername("Alice");
@@ -98,7 +98,7 @@ class UserServiceImplTest {
 
     @Test
     void updateProfile_whenUsernameBlank_shouldPersistNullUsername() {
-        UserServiceImpl service = new UserServiceImpl(userMapper, userConsoleService, ossStorageService);
+        UserServiceImpl service = new UserServiceImpl(userMapper, learningConsoleQueryService, ossStorageService);
         User existing = user(9L, "old@example.com");
         existing.setUsername("Alice");
         User updated = user(9L, "old@example.com");
@@ -118,7 +118,7 @@ class UserServiceImplTest {
 
     @Test
     void getProfile_shouldDecodeCompactTargetScores() {
-        UserServiceImpl service = new UserServiceImpl(userMapper, userConsoleService, ossStorageService);
+        UserServiceImpl service = new UserServiceImpl(userMapper, learningConsoleQueryService, ossStorageService);
         User user = user(9L, "u@example.com");
         user.setUsername("Alice");
         user.setIeltsTargetScores("7,6.5,,8");
@@ -140,7 +140,7 @@ class UserServiceImplTest {
 
     @Test
     void updateProfile_whenEmailExists_shouldThrow() {
-        UserServiceImpl service = new UserServiceImpl(userMapper, userConsoleService, ossStorageService);
+        UserServiceImpl service = new UserServiceImpl(userMapper, learningConsoleQueryService, ossStorageService);
         UserProfileUpdateDTO dto = new UserProfileUpdateDTO();
         dto.setEmail("used@example.com");
         when(userMapper.findActiveById(9L)).thenReturn(user(9L, "old@example.com"));
@@ -157,7 +157,7 @@ class UserServiceImplTest {
 
     @Test
     void updateProfile_whenTargetScoreIsNotHalfBand_shouldThrow() {
-        UserServiceImpl service = new UserServiceImpl(userMapper, userConsoleService, ossStorageService);
+        UserServiceImpl service = new UserServiceImpl(userMapper, learningConsoleQueryService, ossStorageService);
         UserProfileUpdateDTO dto = new UserProfileUpdateDTO();
         dto.setListeningTargetScore(new BigDecimal("6.25"));
         when(userMapper.findActiveById(9L)).thenReturn(user(9L, "old@example.com"));
@@ -173,7 +173,7 @@ class UserServiceImplTest {
 
     @Test
     void updateProfile_whenTargetScoreIsOutOfRange_shouldThrow() {
-        UserServiceImpl service = new UserServiceImpl(userMapper, userConsoleService, ossStorageService);
+        UserServiceImpl service = new UserServiceImpl(userMapper, learningConsoleQueryService, ossStorageService);
         UserProfileUpdateDTO dto = new UserProfileUpdateDTO();
         dto.setSpeakingTargetScore(new BigDecimal("9.5"));
         when(userMapper.findActiveById(9L)).thenReturn(user(9L, "old@example.com"));
@@ -189,9 +189,9 @@ class UserServiceImplTest {
 
     @Test
     void getStats_shouldMapModuleStatsAndTotals() {
-        UserServiceImpl service = new UserServiceImpl(userMapper, userConsoleService, ossStorageService);
+        UserServiceImpl service = new UserServiceImpl(userMapper, learningConsoleQueryService, ossStorageService);
         when(userMapper.findActiveById(9L)).thenReturn(user(9L, "u@example.com"));
-        when(userConsoleService.moduleStats(9L)).thenReturn(List.of(
+        when(learningConsoleQueryService.userModuleStats(9L)).thenReturn(List.of(
                 module("listening", 1L, 2L),
                 module("reading", 3L, 4L),
                 module("writing", 5L, 6L),
@@ -215,7 +215,7 @@ class UserServiceImplTest {
 
     @Test
     void getProfilePicture_shouldReturnCurrentProfilePicture() {
-        UserServiceImpl service = new UserServiceImpl(userMapper, userConsoleService, ossStorageService);
+        UserServiceImpl service = new UserServiceImpl(userMapper, learningConsoleQueryService, ossStorageService);
         User user = user(9L, "u@example.com");
         user.setProfilePictureUrl("https://oss.test/avatar.png");
         user.setProfilePictureObjectKey("user-profile-picture/9/avatar.png");
@@ -234,7 +234,7 @@ class UserServiceImplTest {
 
     @Test
     void updateProfilePicture_shouldUploadToUserProfilePictureBucketAndPersistUrl() {
-        UserServiceImpl service = new UserServiceImpl(userMapper, userConsoleService, ossStorageService);
+        UserServiceImpl service = new UserServiceImpl(userMapper, learningConsoleQueryService, ossStorageService);
         MockMultipartFile file = new MockMultipartFile("file", "avatar.png", "image/png", "fake".getBytes());
         User existing = user(9L, "u@example.com");
         User updated = user(9L, "u@example.com");
@@ -265,7 +265,7 @@ class UserServiceImplTest {
 
     @Test
     void updateProfilePicture_shouldDeleteOldObjectAfterSuccessfulUpdate() {
-        UserServiceImpl service = new UserServiceImpl(userMapper, userConsoleService, ossStorageService);
+        UserServiceImpl service = new UserServiceImpl(userMapper, learningConsoleQueryService, ossStorageService);
         MockMultipartFile file = new MockMultipartFile("file", "avatar.webp", "image/webp", "fake".getBytes());
         User existing = user(9L, "u@example.com");
         existing.setProfilePictureObjectKey("user-profile-picture/9/old.webp");
@@ -288,7 +288,7 @@ class UserServiceImplTest {
 
     @Test
     void updateProfilePicture_whenEmptyFile_shouldThrow() {
-        UserServiceImpl service = new UserServiceImpl(userMapper, userConsoleService, ossStorageService);
+        UserServiceImpl service = new UserServiceImpl(userMapper, learningConsoleQueryService, ossStorageService);
         MockMultipartFile file = new MockMultipartFile("file", "avatar.png", "image/png", new byte[0]);
         when(userMapper.findActiveById(9L)).thenReturn(user(9L, "u@example.com"));
 
@@ -303,7 +303,7 @@ class UserServiceImplTest {
 
     @Test
     void updateProfilePicture_whenNonImageContentType_shouldThrow() {
-        UserServiceImpl service = new UserServiceImpl(userMapper, userConsoleService, ossStorageService);
+        UserServiceImpl service = new UserServiceImpl(userMapper, learningConsoleQueryService, ossStorageService);
         MockMultipartFile file = new MockMultipartFile("file", "avatar.png", "text/plain", "fake".getBytes());
         when(userMapper.findActiveById(9L)).thenReturn(user(9L, "u@example.com"));
 
@@ -318,7 +318,7 @@ class UserServiceImplTest {
 
     @Test
     void updateProfilePicture_whenInvalidExtension_shouldThrow() {
-        UserServiceImpl service = new UserServiceImpl(userMapper, userConsoleService, ossStorageService);
+        UserServiceImpl service = new UserServiceImpl(userMapper, learningConsoleQueryService, ossStorageService);
         MockMultipartFile file = new MockMultipartFile("file", "avatar.txt", "image/png", "fake".getBytes());
         when(userMapper.findActiveById(9L)).thenReturn(user(9L, "u@example.com"));
 
@@ -348,3 +348,4 @@ class UserServiceImplTest {
         return vo;
     }
 }
+

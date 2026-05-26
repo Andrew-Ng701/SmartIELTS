@@ -31,6 +31,7 @@ public class DashboardLearningContextServiceImpl implements DashboardLearningCon
     private static final String CONTEXT_KEY_PASSAGE = "passage";
     private static final String CONTEXT_KEY_QUESTION = "question";
     private static final String CONTEXT_KEY_USER_ATTEMPT = "userAttempt";
+    private static final String CONTEXT_KEY_RECORD_QUESTIONS = "recordQuestions";
 
     private final LearningObjectQueryService learningObjectQueryService;
 
@@ -81,6 +82,7 @@ public class DashboardLearningContextServiceImpl implements DashboardLearningCon
             if (moduleContext.getUserAttempt() != null) {
                 result.put(CONTEXT_KEY_USER_ATTEMPT, moduleContext.getUserAttempt());
             }
+            putRecordQuestionsIfPresent(result, module, effectiveUserId, objectRef);
 
             log.info(
                 "dashboard.learning.done role={} operatorUserId={} targetUserId={} keys={} totalElapsedMs={}",
@@ -90,12 +92,33 @@ public class DashboardLearningContextServiceImpl implements DashboardLearningCon
         }
 
         fallbackLoadDiscreteObjects(result, module, effectiveUserId, objectRef, askScene);
+        putRecordQuestionsIfPresent(result, module, effectiveUserId, objectRef);
 
         log.info(
             "dashboard.learning.done role={} operatorUserId={} targetUserId={} keys={} totalElapsedMs={}",
             role, operatorUserId, targetUserId, result.keySet(), System.currentTimeMillis() - startedAt
         );
         return result;
+    }
+
+    private void putRecordQuestionsIfPresent(Map<String, Object> result,
+                                             String module,
+                                             Long effectiveUserId,
+                                             DashboardAskObjectRef objectRef) {
+        if (objectRef == null || objectRef.getRecordId() == null) {
+            return;
+        }
+        if (!MODULE_LISTENING.equals(module) && !MODULE_READING.equals(module)) {
+            return;
+        }
+        var recordQuestions = learningObjectQueryService.listRecordQuestions(
+                module,
+                effectiveUserId,
+                objectRef.getRecordId()
+        );
+        if (recordQuestions != null && !recordQuestions.isEmpty()) {
+            result.put(CONTEXT_KEY_RECORD_QUESTIONS, recordQuestions);
+        }
     }
 
     private void resolveQuestionIdIfMissing(String module, Long userId, DashboardAskObjectRef objectRef) {

@@ -30,6 +30,7 @@ import java.util.concurrent.Executor;
 public class UserDashboardSseController {
 
     private static final long SSE_TIMEOUT_MILLIS = 120000L;
+    private static final int ANSWER_CHUNK_CODE_POINTS = 24;
 
     private final DashboardIntentExecutionFacade dashboardIntentExecutionFacade;
 
@@ -84,19 +85,19 @@ public class UserDashboardSseController {
             sendEvent(emitter, "loading", loadingPayload);
 
             DashboardAssistantResponse response =
-                    dashboardIntentExecutionFacade.ask("USER", operatorUserId, operatorUserId, request);
+                    dashboardIntentExecutionFacade.ask(
+                            "USER",
+                            operatorUserId,
+                            operatorUserId,
+                            request,
+                            (displayAnswer, meta) -> sendIntentResolvedEvent(emitter, displayAnswer, meta)
+                    );
 
             log.info("dashboard.ask.sse.facade.done role=USER operatorUserId={} elapsedMs={} meta={}",
                     operatorUserId, System.currentTimeMillis() - startedAt,
                     response == null ? null : response.getMeta());
 
-            Map<String, Object> intentResolvedPayload = new LinkedHashMap<>();
-            intentResolvedPayload.put("message", "intent resolved");
-            intentResolvedPayload.put("loading", true);
-            intentResolvedPayload.put("displayAnswer", buildIntentResolvedLoadingAnswer(request, response));
-            intentResolvedPayload.put("meta", safeMeta(response == null ? null : response.getMeta()));
-            sendEvent(emitter, "intentResolved", intentResolvedPayload);
-
+            streamFinalAnswer(emitter, response);
             sendEvent(emitter, "result", Result.success(response));
 
             Map<String, Object> donePayload = new LinkedHashMap<>();
@@ -132,6 +133,59 @@ public class UserDashboardSseController {
 
     private void sendEvent(SseEmitter emitter, String eventName, Object data) throws IOException {
         emitter.send(SseEmitter.event().name(eventName).data(data));
+    }
+
+    private void sendIntentResolvedEvent(SseEmitter emitter, String displayAnswer, Map<String, Object> meta) {
+        try {
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("message", "intent resolved");
+            payload.put("loading", true);
+            payload.put("displayAnswer", displayAnswer == null || displayAnswer.isBlank()
+                    ? "我已理解你的問題，正在整理最終回覆。"
+                    : displayAnswer.trim());
+            payload.put("stage", "DECISION_RESOLVED");
+            payload.put("meta", safeMeta(meta));
+            sendEvent(emitter, "intentResolved", payload);
+        } catch (IOException e) {
+            throw new IllegalStateException("failed to send dashboard intentResolved event", e);
+        }
+    }
+
+    private void streamFinalAnswer(SseEmitter emitter, DashboardAssistantResponse response) throws IOException {
+        String answer = response == null ? null : response.getAnswer();
+        if (answer == null || answer.isBlank()) {
+            return;
+        }
+
+        Map<String, Object> startPayload = new LinkedHashMap<>();
+        startPayload.put("stage", "FINAL_STREAMING");
+        startPayload.put("clearPrevious", true);
+        startPayload.put("answer", "");
+        startPayload.put("meta", safeMeta(response.getMeta()));
+        sendEvent(emitter, "finalStart", startPayload);
+
+        int index = 0;
+        int offset = 0;
+        while (offset < answer.length()) {
+            int nextOffset = nextChunkOffset(answer, offset);
+            Map<String, Object> deltaPayload = new LinkedHashMap<>();
+            deltaPayload.put("index", index++);
+            deltaPayload.put("delta", answer.substring(offset, nextOffset));
+            deltaPayload.put("done", false);
+            sendEvent(emitter, "answerDelta", deltaPayload);
+            offset = nextOffset;
+        }
+
+        Map<String, Object> endPayload = new LinkedHashMap<>();
+        endPayload.put("stage", "FINAL_STREAMING");
+        endPayload.put("done", true);
+        sendEvent(emitter, "finalEnd", endPayload);
+    }
+
+    private int nextChunkOffset(String text, int offset) {
+        int remainingCodePoints = text.codePointCount(offset, text.length());
+        int chunkCodePoints = Math.min(ANSWER_CHUNK_CODE_POINTS, remainingCodePoints);
+        return text.offsetByCodePoints(offset, chunkCodePoints);
     }
 
     private void safeComplete(SseEmitter emitter) {
@@ -171,54 +225,9 @@ public class UserDashboardSseController {
             return "I'm checking your dashboard data and organizing the key points now.";
         }
         if ("zh-Hans".equals(language)) {
-            return "我正在查看你的儀表板資料，並整理重點結果。";
+            return "我正在查看你的仪表板数据，并先整理关键脉络。";
         }
-        return "我正在查看你的儀表板資料，並整理重點結果。";
-    }
-
-    private String buildIntentResolvedLoadingAnswer(DashboardAskRequest request, DashboardAssistantResponse response) {
-        String reviewSummary = response != null && response.getMeta() != null
-                ? stringValue(response.getMeta().get("reviewSummary"))
-                : null;
-
-        if (reviewSummary != null && !reviewSummary.isBlank()) {
-            return reviewSummary.trim();
-        }
-
-        String language = resolveLanguage(request);
-        String answerMode = response != null && response.getMeta() != null
-                ? stringValue(response.getMeta().get("answerMode"))
-                : null;
-
-        if ("en".equals(language)) {
-            if ("FALLBACK_SQL".equalsIgnoreCase(answerMode) || "AI_SQL_SUCCESS".equalsIgnoreCase(answerMode)) {
-                return "I'm querying the relevant dashboard records and consolidating the final analysis.";
-            }
-            return "The request has been understood and the final response is being assembled.";
-        }
-
-        if ("zh-Hans".equals(language)) {
-            if ("FALLBACK_SQL".equalsIgnoreCase(answerMode) || "AI_SQL_SUCCESS".equalsIgnoreCase(answerMode)) {
-                return "正在查詢相關儀表板資料並整理最終分析。";
-            }
-            return "我已理解你的問題，正在整理最終回覆。";
-        }
-
-        if ("yue-Hant".equals(language) || "zh-Hant".equals(language)) {
-            if ("FALLBACK_SQL".equalsIgnoreCase(answerMode) || "AI_SQL_SUCCESS".equalsIgnoreCase(answerMode)) {
-                return "正在查詢相關儀表板資料並整理最終分析。";
-            }
-            return "我已理解你的問題，正在整理最終回覆。";
-        }
-
-        return "我已理解你的問題，正在整理最終回覆。";
-    }
-
-    private boolean isSqlMode(String answerMode) {
-        return "FALL_BACK_SQL".equalsIgnoreCase(answerMode)
-                || "AI_SQL_SUCCESS".equalsIgnoreCase(answerMode)
-                || "FALLBACK_SQL".equalsIgnoreCase(answerMode)
-                || "AI_SQL_SUCCESS".equalsIgnoreCase(answerMode);
+        return "我正在查看你的儀表板資料，並先整理關鍵脈絡。";
     }
 
     private String resolveLanguage(DashboardAskRequest request) {
@@ -247,10 +256,6 @@ public class UserDashboardSseController {
             }
         }
         return "en";
-    }
-
-    private String stringValue(Object value) {
-        return value == null ? null : String.valueOf(value);
     }
 
     private Long getCurrentUserId() {

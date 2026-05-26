@@ -156,8 +156,24 @@ public final class DashboardDetailBundleSqlTemplates {
                 wq.task_type AS task_type,
                 wq.title AS question_title,
                 wq.description AS question_text,
-                wq.image_url AS image_url,
-                wq.image_object_key AS image_object_key,
+                (
+                    SELECT bir.file_url
+                    FROM biz_image_resource bir
+                    WHERE bir.target_type = 'WRITING_QUESTION'
+                      AND bir.target_id = wq.id
+                      AND bir.is_deleted = 0
+                    ORDER BY bir.sort_order ASC, bir.id ASC
+                    LIMIT 1
+                ) AS image_url,
+                (
+                    SELECT bir.object_key
+                    FROM biz_image_resource bir
+                    WHERE bir.target_type = 'WRITING_QUESTION'
+                      AND bir.target_id = wq.id
+                      AND bir.is_deleted = 0
+                    ORDER BY bir.sort_order ASC, bir.id ASC
+                    LIMIT 1
+                ) AS image_object_key,
                 wra.id AS attachment_id,
                 wra.file_type AS file_type,
                 wra.file_url AS file_url,

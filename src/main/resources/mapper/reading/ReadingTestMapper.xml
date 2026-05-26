@@ -11,9 +11,12 @@
         <result column="updated_time" property="updatedTime"/>
         <result column="is_deleted" property="isDeleted"/>
         <result column="timer_mode" property="timerMode"/>
+        <result column="prep_seconds" property="prepSeconds"/>
         <result column="total_seconds" property="totalSeconds"/>
         <result column="auto_submit" property="autoSubmit"/>
         <result column="allow_pause" property="allowPause"/>
+        <result column="tasks" property="tasks"/>
+        <result column="questions" property="questions"/>
     </resultMap>
 
     <sql id="BaseColumnList">
@@ -24,6 +27,7 @@
         updated_time,
         is_deleted,
         timer_mode,
+        prep_seconds,
         total_seconds,
         auto_submit,
         allow_pause
@@ -35,10 +39,10 @@
             keyProperty="id">
         insert into reading_test (
             title, total_score, created_time, updated_time, is_deleted,
-            timer_mode, total_seconds, auto_submit, allow_pause
+            timer_mode, prep_seconds, total_seconds, auto_submit, allow_pause
         ) values (
                      #{title}, #{totalScore}, #{createdTime}, #{updatedTime}, 0,
-                     #{timerMode}, #{totalSeconds}, #{autoSubmit}, #{allowPause}
+                     #{timerMode}, #{prepSeconds}, #{totalSeconds}, #{autoSubmit}, #{allowPause}
                  )
     </insert>
 
@@ -56,9 +60,33 @@
     </select>
 
     <select id="findAllActive" resultMap="BaseMap">
-        select <include refid="BaseColumnList"/>
-        from reading_test
-        where is_deleted = 0
+        select rt.id,
+               rt.title,
+               rt.total_score,
+               rt.created_time,
+               rt.updated_time,
+               rt.is_deleted,
+               rt.timer_mode,
+               rt.prep_seconds,
+               rt.total_seconds,
+               rt.auto_submit,
+               rt.allow_pause,
+               (
+                   select count(1)
+                   from reading_passage rp
+                   where rp.test_id = rt.id
+                     and rp.is_deleted = 0
+               ) as tasks,
+               (
+                   select count(1)
+                   from reading_passage rp
+                            join reading_question rq on rq.passage_id = rp.id
+                   where rp.test_id = rt.id
+                     and rp.is_deleted = 0
+                     and rq.is_deleted = 0
+               ) as questions
+        from reading_test rt
+        where rt.is_deleted = 0
         order by id desc
     </select>
 
@@ -82,6 +110,7 @@
             total_score = #{totalScore},
             updated_time = #{updatedTime},
             timer_mode = #{timerMode},
+            prep_seconds = #{prepSeconds},
             total_seconds = #{totalSeconds},
             auto_submit = #{autoSubmit},
             allow_pause = #{allowPause}

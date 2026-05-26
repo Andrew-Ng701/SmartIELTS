@@ -18,7 +18,13 @@ public class SpeakingRecordVO {
 
     private String questionText;
 
+    private String prompt;
+
+    private String cueCard;
+
     private String audioUrl;
+
+    private String transcript;
 
     private BigDecimal fluencyAndCoherence;
 
@@ -31,6 +37,10 @@ public class SpeakingRecordVO {
     private BigDecimal overallScore;
 
     private String feedback;
+
+    private String relevanceComment;
+
+    private String qualityComment;
 
     private String answerStatus;
 

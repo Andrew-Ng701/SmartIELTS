@@ -6,4 +6,5 @@ import lombok.Data;
 public class ListeningAudioUpsertDTO {
     private Long id;
     private String title;
+    private String transcriptText;
 }

@@ -17,4 +17,5 @@ public class DashboardSqlReviewRequest {
     private DashboardIntentParseResult intent;
     private DashboardSqlGenerationResult sqlPlan;
     private List<Map<String, Object>> rows;
+    private Map<String, Object> userTargetScores;
 }

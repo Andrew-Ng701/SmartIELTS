@@ -5,7 +5,7 @@
 <mapper namespace="com.andrew.smartielts.user.mapper.UserMapper">
 
     <select id="findAnyById" resultType="com.andrew.smartielts.auth.domain.pojo.User">
-        select id, email, username, password, role, is_deleted, deleted_time, created_time, last_login_time,
+        select id, email, username, password, role, is_deleted, deleted_time, created_time, last_login_time, consecutive_login_days,
                profile_picture_url, profile_picture_object_key, ielts_target_scores
         from sys_user
         where id = #{id}
@@ -13,7 +13,7 @@
     </select>
 
     <select id="findActiveById" resultType="com.andrew.smartielts.auth.domain.pojo.User">
-        select id, email, username, password, role, is_deleted, deleted_time, created_time, last_login_time,
+        select id, email, username, password, role, is_deleted, deleted_time, created_time, last_login_time, consecutive_login_days,
                profile_picture_url, profile_picture_object_key, ielts_target_scores
         from sys_user
         where id = #{id}
@@ -45,7 +45,7 @@
     </select>
 
     <select id="pageActive" resultType="com.andrew.smartielts.auth.domain.pojo.User">
-        select id, email, username, password, role, is_deleted, deleted_time, created_time, last_login_time,
+        select id, email, username, password, role, is_deleted, deleted_time, created_time, last_login_time, consecutive_login_days,
                profile_picture_url, profile_picture_object_key, ielts_target_scores
         from sys_user
         where is_deleted = 0
@@ -110,7 +110,7 @@
     </select>
 
     <select id="pageDeleted" resultType="com.andrew.smartielts.auth.domain.pojo.User">
-        select id, email, username, password, role, is_deleted, deleted_time, created_time, last_login_time,
+        select id, email, username, password, role, is_deleted, deleted_time, created_time, last_login_time, consecutive_login_days,
                profile_picture_url, profile_picture_object_key, ielts_target_scores
         from sys_user
         where is_deleted = 1
@@ -246,6 +246,61 @@
         ) record_counts
         group by user_id, module_type, paper_id, paper_title
         order by user_id asc, module_type asc, paper_id asc
+    </select>
+
+    <select id="selectConsoleLeaderboards" resultType="com.andrew.smartielts.console.domain.vo.AdminConsoleLeaderboardVO">
+        select
+            u.id as userId,
+            u.email as email,
+            u.username as username,
+            coalesce(sum(r.active_count), 0) as activeRecordCount,
+            coalesce(sum(r.deleted_count), 0) as deletedRecordCount,
+            coalesce(sum(r.total_count), 0) as totalRecordCount,
+            max(r.last_activity_time) as lastActivityTime
+        from sys_user u
+        left join (
+            select user_id,
+                   sum(case when is_deleted = 0 then 1 else 0 end) as active_count,
+                   sum(case when is_deleted = 1 then 1 else 0 end) as deleted_count,
+                   count(*) as total_count,
+                   max(created_time) as last_activity_time
+            from listening_record
+            group by user_id
+
+            union all
+
+            select user_id,
+                   sum(case when is_deleted = 0 then 1 else 0 end) as active_count,
+                   sum(case when is_deleted = 1 then 1 else 0 end) as deleted_count,
+                   count(*) as total_count,
+                   max(created_time) as last_activity_time
+            from reading_record
+            group by user_id
+
+            union all
+
+            select user_id,
+                   sum(case when is_deleted = 0 then 1 else 0 end) as active_count,
+                   sum(case when is_deleted = 1 then 1 else 0 end) as deleted_count,
+                   count(*) as total_count,
+                   max(created_time) as last_activity_time
+            from writing_record
+            group by user_id
+
+            union all
+
+            select user_id,
+                   sum(case when is_deleted = 0 then 1 else 0 end) as active_count,
+                   sum(case when is_deleted = 1 then 1 else 0 end) as deleted_count,
+                   count(*) as total_count,
+                   max(created_time) as last_activity_time
+            from speaking_record
+            group by user_id
+        ) r on r.user_id = u.id
+        where u.is_deleted = 0
+        group by u.id, u.email, u.username
+        order by totalRecordCount desc, activeRecordCount desc, lastActivityTime desc
+        limit #{limit}
     </select>
 
     <update id="softDeleteById">

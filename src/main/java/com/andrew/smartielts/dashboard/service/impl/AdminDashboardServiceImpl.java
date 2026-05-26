@@ -8,6 +8,7 @@ import com.andrew.smartielts.dashboard.constants.DashboardOverviewConstants;
 import com.andrew.smartielts.dashboard.controller.dto.DashboardAskPreloadedPayload;
 import com.andrew.smartielts.dashboard.domain.vo.AdminExecutiveSummaryVO;
 import com.andrew.smartielts.dashboard.preload.DashboardPreloadService;
+import com.andrew.smartielts.dashboard.service.DashboardExecutiveSummaryCacheService;
 import com.andrew.smartielts.dashboard.service.AdminDashboardService;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -24,18 +25,45 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class AdminDashboardServiceImpl implements AdminDashboardService {
 
+    private static final long EXECUTIVE_SUMMARY_CACHE_TTL_MILLIS = 12 * 60 * 60 * 1000L;
+    private static final String SUMMARY_SOURCE_CACHE = "executive_summary_cache";
+    private static final String SUMMARY_SOURCE_COMPOSE = "preloaded_payload_compose";
+
     private final ObjectProvider<DashboardPreloadService> dashboardPreloadServiceProvider;
     private final ObjectMapper objectMapper;
     private final DashboardAnswerComposeService dashboardAnswerComposeService;
+    private final DashboardExecutiveSummaryCacheService dashboardExecutiveSummaryCacheService;
 
     @Override
     public AdminExecutiveSummaryVO adminExecutiveSummary(Long operatorUserId, Long targetUserId, String timeRange) {
-        DashboardAskPreloadedPayload payload = loadAdminOverviewPayload(operatorUserId, targetUserId, timeRange);
+        return adminExecutiveSummary(operatorUserId, targetUserId, timeRange, null);
+    }
+
+    @Override
+    public AdminExecutiveSummaryVO adminExecutiveSummary(Long operatorUserId,
+                                                        Long targetUserId,
+                                                        String timeRange,
+                                                        String summaryCacheKey) {
+        Long effectiveTargetUserId = null;
+        String cacheKey = buildSummaryCacheKey(
+                DashboardOverviewConstants.ROLE_ADMIN,
+                operatorUserId,
+                effectiveTargetUserId,
+                timeRange,
+                summaryCacheKey
+        );
+        AdminExecutiveSummaryVO cached = dashboardExecutiveSummaryCacheService.get(cacheKey, AdminExecutiveSummaryVO.class);
+        if (cached != null) {
+            markCacheHit(cached.getMeta(), true);
+            return cached;
+        }
+
+        DashboardAskPreloadedPayload payload = loadAdminOverviewPayload(operatorUserId, effectiveTargetUserId, timeRange);
         String query = DashboardExecutiveSummaryQueryConstants.ADMIN_EXECUTIVE_SUMMARY_DEFAULT_QUERY;
         String summaryText = composeExecutiveSummary(
                 DashboardOverviewConstants.ROLE_ADMIN,
                 operatorUserId,
-                targetUserId,
+                effectiveTargetUserId,
                 query,
                 "admin_executive_summary",
                 timeRange,
@@ -43,19 +71,22 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
         );
 
         if (!hasText(summaryText)) {
-            summaryText = buildFallbackSummary(payload, timeRange, targetUserId);
+            summaryText = buildFallbackSummary(payload, timeRange);
         }
 
         Map<String, Object> meta = new LinkedHashMap<>();
-        meta.put("summary_source", "preloaded_payload_compose");
+        meta.put("summary_source", SUMMARY_SOURCE_COMPOSE);
+        meta.put("summary_cache_enabled", true);
+        meta.put("summary_cache_hit", false);
+        meta.put("summary_cache_key", safeCacheKey(summaryCacheKey));
+        meta.put("summary_cache_scope_key", cacheKey);
         meta.put("time_range", normalizeTimeRange(timeRange));
-        meta.put("target_user_id", targetUserId);
         meta.put("has_overview", payload.getOverview() != null);
         meta.put("has_progress_summary", payload.getProgressSummary() != null);
         meta.put("module_stat_count", payload.getModuleStats() == null ? 0 : payload.getModuleStats().size());
         meta.put("recent_record_count", payload.getRecentRecords() == null ? 0 : payload.getRecentRecords().size());
 
-        return AdminExecutiveSummaryVO.builder()
+        AdminExecutiveSummaryVO result = AdminExecutiveSummaryVO.builder()
                 .snapshotId(payload.getSnapshotId())
                 .snapshotTime(payload.getSnapshotTime())
                 .summaryType(DashboardOverviewConstants.SUMMARY_TYPE_AI)
@@ -64,6 +95,8 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
                 .queryUsed(query)
                 .meta(meta)
                 .build();
+        dashboardExecutiveSummaryCacheService.put(cacheKey, result, EXECUTIVE_SUMMARY_CACHE_TTL_MILLIS);
+        return result;
     }
 
     private DashboardAskPreloadedPayload loadAdminOverviewPayload(Long operatorUserId,
@@ -107,7 +140,8 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
         Map<String, Object> filters = new LinkedHashMap<>();
         filters.put("pageName", pageName);
         filters.put("summaryType", "executive_summary");
-        filters.put("tone", "warm_teacher");
+        filters.put("tone", "concise_executive");
+        filters.put("outputStyle", "2-3 short English sentences");
         filters.put("timeRange", normalizeTimeRange(timeRange));
 
         DashboardAnswerComposeResult result = dashboardAnswerComposeService.compose(
@@ -119,23 +153,23 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
                         .capability("PRELOADED_DIRECT")
                         .filters(filters)
                         .data(data)
-                        .responseLanguage(DashboardOverviewConstants.RESPONSE_LANGUAGE_ZH_HANT)
+                        .responseLanguage(DashboardOverviewConstants.RESPONSE_LANGUAGE_EN)
                         .build()
         );
         return result == null || result.getAnswer() == null ? null : result.getAnswer().trim();
     }
 
-    private String buildFallbackSummary(DashboardAskPreloadedPayload payload, String timeRange, Long targetUserId) {
+    private String buildFallbackSummary(DashboardAskPreloadedPayload payload, String timeRange) {
         Map<String, Object> overview = toMap(payload.getOverview());
-        Map<String, Object> progress = toMap(payload.getProgressSummary());
-        String active = firstNonBlank(getString(overview, "totalActiveRecords"), "0");
-        String deleted = firstNonBlank(getString(overview, "totalDeletedRecords"), "0");
-        String average = firstNonBlank(getString(progress, "averageScore"), getString(progress, "overallAverageScore"), "0");
-        return "AI admin summary fallback for user " + targetUserId
-                + " in " + normalizeTimeRange(timeRange)
-                + ": active records " + active
-                + ", deleted records " + deleted
-                + ", average score " + average + ".";
+        String totalUsers = firstNonBlank(getString(overview, "totalUsers"), "0");
+        String activeUsers = firstNonBlank(getString(overview, "activeUsers"), "0");
+        String activeRecords = firstNonBlank(getString(overview, "totalActiveRecords"), "0");
+        String aiFailures = firstNonBlank(getString(overview, "recentAiFailureCount"), "0");
+        return "AI admin summary fallback for " + normalizeTimeRange(timeRange)
+                + ": platform users " + totalUsers
+                + ", active users " + activeUsers
+                + ", active records " + activeRecords
+                + ", recent AI failures " + aiFailures + ".";
     }
 
     private Map<String, Object> toMap(Object value) {
@@ -192,6 +226,36 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
 
     private String normalizeTimeRange(String timeRange) {
         return hasText(timeRange) ? timeRange.trim() : DashboardOverviewConstants.DEFAULT_TIME_RANGE;
+    }
+
+    private String buildSummaryCacheKey(String role,
+                                        Long operatorUserId,
+                                        Long targetUserId,
+                                        String timeRange,
+                                        String summaryCacheKey) {
+        return String.join(":",
+                safeKey(role),
+                String.valueOf(operatorUserId),
+                String.valueOf(targetUserId),
+                safeKey(normalizeTimeRange(timeRange)),
+                safeKey(summaryCacheKey)
+        );
+    }
+
+    private String safeCacheKey(String summaryCacheKey) {
+        return hasText(summaryCacheKey) ? summaryCacheKey.trim() : null;
+    }
+
+    private String safeKey(String value) {
+        return hasText(value) ? value.trim().toLowerCase().replaceAll("[^a-z0-9._-]", "_") : "default";
+    }
+
+    private void markCacheHit(Map<String, Object> meta, boolean cacheHit) {
+        if (meta == null) {
+            return;
+        }
+        meta.put("summary_source", SUMMARY_SOURCE_CACHE);
+        meta.put("summary_cache_hit", cacheHit);
     }
 
     private List<String> splitSummarySentences(String text) {

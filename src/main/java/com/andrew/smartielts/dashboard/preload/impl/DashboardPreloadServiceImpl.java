@@ -225,19 +225,19 @@ public class DashboardPreloadServiceImpl implements DashboardPreloadService {
     private DashboardCapability resolveOverviewCapability(String role) {
         return ROLE_USER.equalsIgnoreCase(role)
                 ? DashboardCapability.USER_SELF_OVERVIEW
-                : DashboardCapability.ADMIN_USER_RECORD_SUMMARY;
+                : DashboardCapability.ADMIN_GLOBAL_OVERVIEW;
     }
 
     private DashboardCapability resolveProgressCapability(String role) {
         return ROLE_USER.equalsIgnoreCase(role)
                 ? DashboardCapability.USER_SELF_PROGRESS_SUMMARY
-                : DashboardCapability.ADMIN_USER_RECORD_SUMMARY;
+                : DashboardCapability.ADMIN_USER_COUNT;
     }
 
     private DashboardCapability resolveRecentRecordsCapability(String role) {
         return ROLE_USER.equalsIgnoreCase(role)
                 ? DashboardCapability.USER_SELF_RECENT_RECORDS
-                : DashboardCapability.ADMIN_USER_RECORD_SUMMARY;
+                : DashboardCapability.ADMIN_RECENT_ISSUES;
     }
 
     private DashboardCapability resolveModuleStatsCapability(String role) {

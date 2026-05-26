@@ -69,7 +69,7 @@ public class SpeakingFinalEvaluationServiceImpl implements SpeakingFinalEvaluati
         
                 Tasks:
                 1. Review the candidate's overall speaking performance across the whole session.
-                2. Return final scores for:
+                2. Use IELTS Speaking band logic and the question-by-question evidence to return final scores for:
                    fluencyAndCoherence,
                    lexicalResource,
                    grammaticalRangeAndAccuracy,
@@ -79,10 +79,16 @@ public class SpeakingFinalEvaluationServiceImpl implements SpeakingFinalEvaluati
                 3. The final scores should stay close to the provided aggregated reference scores
                    unless the session evidence strongly supports a small adjustment.
                 4. Scores must be numbers from 0.0 to 9.0, rounded to one decimal place.
-                5. feedback must be concise, practical, session-level, and under 200 words,
-                   explicitly mentioning topic relevance and content quality if they are issues.
-                6. Return valid JSON only.
-                7. Do not include markdown fences.
+                5. feedback must be detailed, practical, and session-level.
+                   Include:
+                   - overall performance judgement;
+                   - comments on fluency, vocabulary, grammar, and pronunciation;
+                   - topic relevance or content quality issues if present;
+                   - two to four focused next-step practice actions.
+                6. Keep feedback in Traditional Chinese, but preserve English examples where useful.
+                7. Keep feedback between 180 and 280 words unless the session evidence is very limited.
+                8. Return valid JSON only.
+                9. Do not include markdown fences.
                 """;
 
             String userPrompt = buildUserPrompt(
@@ -180,10 +186,10 @@ public class SpeakingFinalEvaluationServiceImpl implements SpeakingFinalEvaluati
             sb.append("\"lexicalResource\": ").append(scoreText(record.getLexicalResource())).append(", ");
             sb.append("\"grammaticalRangeAndAccuracy\": ").append(scoreText(record.getGrammaticalRangeAndAccuracy())).append(", ");
             sb.append("\"pronunciation\": ").append(scoreText(record.getPronunciation())).append(", ");
-            sb.append("relevanceComment: ").append(nullToEmpty(record.getRelevanceComment())).append("\n");
-            sb.append("qualityComment: ").append(nullToEmpty(record.getQualityComment())).append("\n\n");
             sb.append("\"overallScore\": ").append(scoreText(record.getOverallScore()));
             sb.append("}\n");
+            sb.append("relevanceComment: ").append(nullToEmpty(record.getRelevanceComment())).append("\n");
+            sb.append("qualityComment: ").append(nullToEmpty(record.getQualityComment())).append("\n");
             sb.append("feedback: ").append(nullToEmpty(record.getFeedback())).append("\n\n");
         }
 

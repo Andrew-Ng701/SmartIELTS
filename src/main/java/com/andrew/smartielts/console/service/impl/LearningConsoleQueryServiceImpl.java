@@ -2,6 +2,7 @@ package com.andrew.smartielts.console.service.impl;
 
 import com.andrew.smartielts.admin.domain.vo.AdminUserConsoleSummaryVO;
 import com.andrew.smartielts.auth.domain.pojo.User;
+import com.andrew.smartielts.console.domain.vo.AdminConsoleLeaderboardVO;
 import com.andrew.smartielts.console.service.LearningConsoleQueryService;
 import com.andrew.smartielts.dashboard.domain.vo.AdminAiFailureVO;
 import com.andrew.smartielts.dashboard.domain.vo.AdminModuleStatVO;
@@ -56,6 +57,7 @@ public class LearningConsoleQueryServiceImpl implements LearningConsoleQueryServ
     private static final int RECENT_RECORD_LIMIT_PER_MODULE = 5;
     private static final int RECENT_RECORD_LIMIT = 10;
     private static final int RECENT_AI_FAILURE_LIMIT = 10;
+    private static final int DEFAULT_LEADERBOARD_LIMIT = 10;
 
     private final UserMapper userMapper;
     private final ListeningRecordMapper listeningRecordMapper;
@@ -75,6 +77,7 @@ public class LearningConsoleQueryServiceImpl implements LearningConsoleQueryServ
         vo.setEmail(user.getEmail());
         vo.setUsername(user.getUsername());
         vo.setLastLoginTime(user.getLastLoginTime());
+        vo.setConsecutiveLoginDays(user.getConsecutiveLoginDays());
         applyIeltsTargetScores(vo, user.getIeltsTargetScores());
         for (UserModuleStatVO stat : stats) {
             if ("listening".equals(stat.getModule())) {
@@ -353,6 +356,13 @@ public class LearningConsoleQueryServiceImpl implements LearningConsoleQueryServ
         vo.setTotalDeletedRecords(summary.getTotalDeletedRecords());
         vo.setGeneratedAt(LocalDateTime.now());
         return vo;
+    }
+
+    @Override
+    public List<AdminConsoleLeaderboardVO> adminUserLeaderboards(Integer limit) {
+        int effectiveLimit = limit == null || limit <= 0 ? DEFAULT_LEADERBOARD_LIMIT : limit;
+        List<AdminConsoleLeaderboardVO> leaderboards = userMapper.selectConsoleLeaderboards(effectiveLimit);
+        return leaderboards == null ? List.of() : leaderboards;
     }
 
     private UserModuleStatVO userModuleStat(String module, long active, long deleted) {

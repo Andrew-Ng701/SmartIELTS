@@ -246,69 +246,12 @@
         </where>
     </select>
 
-    <select id="pageAdminActive" resultMap="WritingRecordMap">
-        SELECT <include refid="Base_Column_List"/>
-        FROM writing_record wr
-        <where>
-            wr.is_deleted = 0
-            <if test="query != null and query.userId != null">
-                AND wr.user_id = #{query.userId}
-            </if>
-            <if test="query != null and query.questionId != null">
-                AND wr.question_id = #{query.questionId}
-            </if>
-            <if test="query != null and query.aiStatus != null and query.aiStatus != ''">
-                AND wr.ai_status = #{query.aiStatus}
-            </if>
-            <if test="query != null and query.inputType != null and query.inputType != ''">
-                AND wr.input_type = #{query.inputType}
-            </if>
-            <if test="query != null and query.targetScore != null">
-                AND wr.target_score = #{query.targetScore}
-            </if>
-            <if test="query != null and query.startTime != null">
-                AND wr.created_time <![CDATA[>=]]> #{query.startTime}
-            </if>
-            <if test="query != null and query.endTime != null">
-                AND wr.created_time <![CDATA[<=]]> #{query.endTime}
-            </if>
-        </where>
-        ORDER BY
-        <choose>
-            <when test="query != null and query.sortDirection != null and query.sortDirection.name() == 'ASC'">
-                wr.created_time ASC, wr.id ASC
-            </when>
-            <otherwise>
-                wr.created_time DESC, wr.id DESC
-            </otherwise>
-        </choose>
-        LIMIT #{limit} OFFSET #{offset}
-    </select>
-
     <select id="countAdminDeleted" resultType="java.lang.Long">
         SELECT COUNT(1)
         FROM writing_record wr
         <where>
             wr.is_deleted = 1
         </where>
-    </select>
-
-    <select id="pageAdminDeleted" resultMap="WritingRecordMap">
-        SELECT <include refid="Base_Column_List"/>
-        FROM writing_record wr
-        <where>
-            wr.is_deleted = 1
-        </where>
-        ORDER BY
-        <choose>
-            <when test="query != null and query.sortDirection != null and query.sortDirection.name() == 'ASC'">
-                wr.deleted_time ASC, wr.id ASC
-            </when>
-            <otherwise>
-                wr.deleted_time DESC, wr.id DESC
-            </otherwise>
-        </choose>
-        LIMIT #{limit} OFFSET #{offset}
     </select>
 
     <update id="softDeleteById">
@@ -377,6 +320,7 @@
         FROM writing_record
         WHERE user_id = #{userId}
           AND is_deleted = 0
+          AND ai_status = 'SUCCESS'
           AND ai_score IS NOT NULL
     </select>
 

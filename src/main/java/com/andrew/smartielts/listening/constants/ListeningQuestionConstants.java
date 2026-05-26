@@ -13,6 +13,7 @@ public final class ListeningQuestionConstants {
 
     public static final String QUESTION_TYPE_MULTIPLE_CHOICE_SINGLE = "MULTIPLE_CHOICE_SINGLE";
     public static final String QUESTION_TYPE_MULTIPLE_CHOICE_MULTI = "MULTIPLE_CHOICE_MULTI";
+    public static final String QUESTION_TYPE_MULTIPLE_CHOICE = "MULTIPLE_CHOICE";
     public static final String QUESTION_TYPE_TRUE_FALSE_NOT_GIVEN = "TRUE_FALSE_NOT_GIVEN";
     public static final String QUESTION_TYPE_YES_NO_NOT_GIVEN = "YES_NO_NOT_GIVEN";
     public static final String QUESTION_TYPE_MATCHING = "MATCHING";
@@ -29,6 +30,7 @@ public final class ListeningQuestionConstants {
     private static final Set<String> SUPPORTED_QUESTION_TYPES = Set.of(
             QUESTION_TYPE_MULTIPLE_CHOICE_SINGLE,
             QUESTION_TYPE_MULTIPLE_CHOICE_MULTI,
+            QUESTION_TYPE_MULTIPLE_CHOICE,
             QUESTION_TYPE_TRUE_FALSE_NOT_GIVEN,
             QUESTION_TYPE_YES_NO_NOT_GIVEN,
             QUESTION_TYPE_MATCHING,
@@ -72,6 +74,27 @@ public final class ListeningQuestionConstants {
         String normalized = normalize_token(answer_mode);
         if (normalized == null) {
             return ANSWER_MODE_TEXT;
+        }
+        if ("INPUT".equals(normalized)
+                || "FILL".equals(normalized)
+                || "FILL_IN".equals(normalized)
+                || "FILL_IN_BLANK".equals(normalized)) {
+            return ANSWER_MODE_TEXT;
+        }
+        if ("RADIO".equals(normalized)
+                || "ONE".equals(normalized)
+                || "SINGLE_ANSWER".equals(normalized)
+                || "SINGLE_MODE".equals(normalized)) {
+            return ANSWER_MODE_SINGLE;
+        }
+        if ("MULTIPLE".equals(normalized)
+                || "CHECKBOX".equals(normalized)
+                || "MANY".equals(normalized)
+                || "MULTIPLE_ANSWER".equals(normalized)
+                || "MULTIPLE_ANSWERS".equals(normalized)
+                || "MULTI_ANSWER".equals(normalized)
+                || "MULTI_ANSWERS".equals(normalized)) {
+            return ANSWER_MODE_MULTI;
         }
         return normalized;
     }

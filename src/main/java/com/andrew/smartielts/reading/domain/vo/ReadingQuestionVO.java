@@ -26,4 +26,5 @@ public class ReadingQuestionVO {
     private Integer score;
     private List<QuestionAnswerRule> answerRules;
     private List<BizImageResourceDTO> groupImages;
+    private List<BizImageResourceDTO> images;
 }
